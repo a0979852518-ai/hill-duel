@@ -1,0 +1,12 @@
+# Render 一鍵部署設定（Blueprint）
+services:
+  - type: web
+    name: hill-duel
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
