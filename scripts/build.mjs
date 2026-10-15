@@ -5,16 +5,20 @@
 // 不依賴 Vite，所以和開發時用的 `npm run dev` 互不影響。
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const require = createRequire(join(root, 'package.json'));
+// 直接找 node_modules 裡的檔案（有些套件的 exports 不允許 require.resolve('xxx/package.json')）
+function pkgFile(pkg, file) {
+  const p = join(root, 'node_modules', pkg, file);
+  if (!existsSync(p)) throw new Error(`[build] 找不到 ${pkg}/${file}，請確認 npm install 有成功`);
+  return p;
+}
 const dist = join(root, 'dist');
 rmSync(dist, { recursive: true, force: true });
 
-const tsc = require.resolve('typescript/bin/tsc');
+const tsc = pkgFile('typescript', 'bin/tsc');
 for (const cfg of ['tsconfig.server.json', 'tsconfig.web.json']) {
   const r = spawnSync(process.execPath, [tsc, '-p', join(root, cfg)], { stdio: 'inherit' });
   // 型別警告不擋打包（tsc 仍會輸出 JS）；真正的語法錯誤會讓下面的檢查失敗
@@ -28,8 +32,8 @@ cpSync(join(root, 'client/public'), web, { recursive: true });
 mkdirSync(join(web, 'client/src'), { recursive: true });
 cpSync(join(root, 'client/src/style.css'), join(web, 'client/src/style.css'));
 mkdirSync(join(web, 'vendor'), { recursive: true });
-cpSync(join(dirname(require.resolve('phaser/package.json')), 'dist/phaser.esm.js'), join(web, 'vendor/phaser.esm.js'));
-cpSync(join(dirname(require.resolve('socket.io/package.json')), 'client-dist/socket.io.esm.min.js'), join(web, 'vendor/socket.io.esm.min.js'));
+cpSync(pkgFile('phaser', 'dist/phaser.esm.js'), join(web, 'vendor/phaser.esm.js'));
+cpSync(pkgFile('socket.io', 'client-dist/socket.io.esm.min.js'), join(web, 'vendor/socket.io.esm.min.js'));
 
 let html = readFileSync(join(root, 'client/index.html'), 'utf8');
 html = html
