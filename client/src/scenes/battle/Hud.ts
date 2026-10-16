@@ -107,7 +107,12 @@ export class Hud {
       side.offline.setVisible(!p.connected);
       side.status.setText(
         p.statuses
-          .map((s) => `${(getStatus(s.statusId)?.name ?? s.statusId).replace(/（.*）/, '')}${s.remainingTurns >= PERMANENT_TURNS ? '' : '×' + s.remainingTurns}`)
+          .map((s) => {
+            const def = getStatus(s.statusId);
+            const name = (def?.name ?? s.statusId).replace(/（.*）/, '');
+            if (def?.stackable && def.damagePerTurn) return `${name} -${def.damagePerTurn * (s.stacks ?? 1)}/回合`;
+            return `${name}${s.remainingTurns >= PERMANENT_TURNS ? '' : '×' + s.remainingTurns}`;
+          })
           .join('  '),
       );
       if (side.maxHp !== p.maxHp) {

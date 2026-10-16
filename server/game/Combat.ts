@@ -2,11 +2,15 @@
 // 全部在伺服器上計算，客戶端只負責播放結果。
 
 import type { ThrowableDef } from '../../shared/config/items.js';
+import { ARENA } from '../../shared/config/game.js';
 import { characterHitbox, distPointRect } from '../../shared/physics.js';
 import type { BattleEvent, DamageEntry, DefenseUpdate, Seat } from '../../shared/types.js';
 import type { BattleState } from './BattleState.js';
 
 export type ThrowEvent = Extract<BattleEvent, { type: 'throw' }>;
+
+/** 爆頭傷害倍率 */
+export const HEADSHOT_MULTIPLIER = 1.5;
 
 export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef, angle: number, power: number): ThrowEvent {
   const damages: DamageEntry[] = [];
@@ -38,9 +42,16 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     for (const target of [0, 1] as Seat[]) {
       let amount = 0;
       let source: DamageEntry['source'] = 'splash';
+      let headshot = false;
       if (impact.kind === 'character' && impact.hitSeat === target) {
         amount = item.damage;
         source = 'direct';
+        // 打到頭（身體上緣以上）傷害 ×1.5，可再和其他倍率（精神傷害、乳清…）相乘
+        const torsoTop = ARENA.characterFeet[target].y - ARENA.characterBody.torsoH;
+        if (impact.y < torsoTop) {
+          amount *= HEADSHOT_MULTIPLIER;
+          headshot = true;
+        }
       } else if (item.explosionRadius > 0 && impact.kind !== 'out') {
         const dist = distPointRect(impact.x, impact.y, characterHitbox(target));
         if (dist <= item.explosionRadius) {
@@ -51,6 +62,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
       if (amount <= 0) continue;
       if (reductionFor === target) amount *= 1 - reduction;
       const entry = state.dealDamage(target, amount, source, seat);
+      if (entry && headshot) entry.headshot = true;
       if (entry) {
         damages.push(entry);
         hitSeats.push(target);

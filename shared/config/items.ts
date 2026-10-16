@@ -130,7 +130,7 @@ export const ITEMS: ItemDef[] = [
     id: 'cigarette',
     kind: 'throwable',
     name: '大哥的香菸',
-    description: '命中傷害 20，之後對方每回合都扣 1 血（直到遊戲結束）。',
+    description: '命中傷害 20，之後對方每回合扣血（直到遊戲結束）；每多命中一次，每回合多扣 1。',
     icon: 'assets/items/cigarette.png',
     placeholder: { shape: 'rect', color: 0xffffff },
     tags: ['light'],
@@ -440,6 +440,8 @@ export interface StatusDef {
   skipTurn?: boolean;
   /** 抽道具時藏起幾個選項 */
   hideDrawOptions?: number;
+  /** 可累加：再次命中時層數 +1，持續傷害 = damagePerTurn × 層數 */
+  stackable?: boolean;
   decrementAt: 'start' | 'end';
 }
 
@@ -447,7 +449,7 @@ export const PERMANENT_TURNS = 999;
 
 export const STATUSES: StatusDef[] = [
   { id: 'poison', name: '中毒', damagePerTurn: 6, color: 0x7bc043, decrementAt: 'start' },
-  { id: 'smoke', name: '二手菸', damagePerTurn: 1, color: 0x9e9e9e, decrementAt: 'start' },
+  { id: 'smoke', name: '二手菸', damagePerTurn: 1, stackable: true, color: 0x9e9e9e, decrementAt: 'start' },
   { id: 'stun', name: '被鎖住', skipTurn: true, color: 0x546e7a, decrementAt: 'start' },
   { id: 'blind', name: '冷氣卡封印', hideDrawOptions: 1, color: 0x4fc3f7, decrementAt: 'end' },
   { id: 'disgust', name: '噁心（傷害減半）', outgoingMultiplier: 0.5, color: 0xc0ca33, decrementAt: 'end' },

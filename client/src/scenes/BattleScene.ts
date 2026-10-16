@@ -394,10 +394,11 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string }[]): void {
+  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean }[]): void {
     for (const d of damages) {
-      const color = d.source === 'direct' ? '#ffeb3b' : d.source === 'functional' ? '#ffd54f' : '#ffffff';
-      damageNumber(this, d.seat, d.amount, color, d.source === 'direct' ? '直擊' : undefined);
+      const color = d.headshot ? '#ff5252' : d.source === 'direct' ? '#ffeb3b' : d.source === 'functional' ? '#ffd54f' : '#ffffff';
+      damageNumber(this, d.seat, d.amount, color, d.headshot ? '爆頭！' : d.source === 'direct' ? '直擊' : undefined);
+      if (d.headshot) this.cameras.main.shake(260, 0.012);
       this.hitCharacter(d.seat);
       this.hud.setHp(d.seat, d.hpAfter);
     }

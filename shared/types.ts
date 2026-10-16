@@ -30,6 +30,8 @@ export type TurnPhase =
 export interface StatusView {
   statusId: string;
   remainingTurns: number;
+  /** 可累加的狀態（例如香菸）目前疊了幾層 */
+  stacks?: number;
 }
 
 export interface PlayerView {
@@ -115,6 +117,8 @@ export interface DamageEntry {
   source: 'direct' | 'splash' | 'status' | 'functional';
   /** source = 'status' 時是哪個狀態造成的 */
   statusId?: string;
+  /** 打到頭（傷害 ×1.5） */
+  headshot?: boolean;
 }
 
 export interface HealEntry {

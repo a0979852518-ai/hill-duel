@@ -77,10 +77,13 @@ export class BattleState {
   applyStatus(seat: Seat, statusId: string, turns: number): void {
     if (!getStatus(statusId)) return;
     const f = this.fighters[seat];
+    const def = getStatus(statusId)!;
     const existing = f.statuses.find((s) => s.statusId === statusId);
-    // 同種狀態不疊加，刷新為較長的回合數
-    if (existing) existing.remainingTurns = Math.max(existing.remainingTurns, turns);
-    else f.statuses.push({ statusId, remainingTurns: turns });
+    if (existing) {
+      // 可累加的（香菸）層數 +1；其他的不疊加，刷新為較長的回合數
+      if (def.stackable) existing.stacks = (existing.stacks ?? 1) + 1;
+      existing.remainingTurns = Math.max(existing.remainingTurns, turns);
+    } else f.statuses.push(def.stackable ? { statusId, remainingTurns: turns, stacks: 1 } : { statusId, remainingTurns: turns });
   }
 
   /**
@@ -94,7 +97,7 @@ export class BattleState {
       const def = getStatus(s.statusId);
       if (!def) continue;
       if (def.damagePerTurn && def.damagePerTurn > 0) {
-        const d = this.dealDamage(seat, def.damagePerTurn, 'status', undefined, def.id);
+        const d = this.dealDamage(seat, def.damagePerTurn * (s.stacks ?? 1), 'status', undefined, def.id);
         if (d) damage.push(d);
       }
       if (def.skipTurn) skip = true;
