@@ -6,6 +6,7 @@ import { ARENA } from '../../../../shared/config/game.js';
 import { getStatus, PERMANENT_TURNS } from '../../../../shared/config/items.js';
 import type { PlayerView, RoomSnapshot, Seat, TurnPhase } from '../../../../shared/types.js';
 import { FONT } from './effects.js';
+import { sfx } from '../../game/sfx.js';
 
 const PHASE_TEXT: Record<TurnPhase, string> = {
   turnStart: '回合開始',
@@ -168,6 +169,7 @@ export class Hud {
   }
 
   private lastTimerKey = '';
+  private lastTimerSecs = -1;
 
   /** 每幀更新倒數（文字只在數字/顏色改變時才重畫，避免每幀重新產生文字貼圖） */
   tick(now: number): void {
@@ -201,6 +203,9 @@ export class Hud {
     g.arc(cx, cy, r * pulse - 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (remain / this.timerTotal), false);
     g.strokePath();
     if (textChanged) {
+      // 最後 5 秒每秒滴答一聲
+      if (warn && secs > 0 && this.lastTimerSecs !== secs) sfx.play('timerTick', { rate: 1 + (5 - secs) * 0.06 });
+      this.lastTimerSecs = secs;
       this.timerText.setText(String(secs));
       this.timerText.setColor(warn ? '#e53935' : '#2b2118');
     }

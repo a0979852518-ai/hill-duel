@@ -8,6 +8,7 @@ import { defenseRect, launchPoint, placementZone } from '../../../../shared/phys
 import type { DefenseView, Seat } from '../../../../shared/types.js';
 import { iconKey } from '../../game/assets.js';
 import { FONT } from './effects.js';
+import { sfx } from '../../game/sfx.js';
 
 const CX = ARENA.width / 2;
 import type { ItemDef } from '../../../../shared/config/items.js';
@@ -83,6 +84,7 @@ export class SlotMachine {
       loop: true,
       callback: () => {
         tick++;
+        if (tick % 2 === 0) sfx.play('slotTick', { rate: 0.9 + (tick % 6) * 0.04, gapMs: 50 });
         this.reels.forEach((r, i) => {
           r.setTexture(iconKey(this.ids[(tick + i * 3) % this.ids.length]));
           fitInto(r, 84);
@@ -105,12 +107,14 @@ export class SlotMachine {
           if (i === this.reels.length - 1) this.spinTimer?.remove();
           const id = shown[i];
           reel.setTexture(id ? iconKey(id) : HIDDEN_ICON);
+          sfx.play('slotStop', { rate: 1 + i * 0.12, gapMs: 0 });
           fitInto(reel, 84);
           reel.y = 5;
           this.scene.tweens.add({ targets: reel, scale: { from: reel.scale * 1.35, to: reel.scale }, duration: 220, ease: 'Back.easeOut' });
           if (i === this.reels.length - 1) {
             if (i < shown.length) this.reels.slice(shown.length).forEach((r) => r.setVisible(false));
             this.state = 'landed';
+            this.scene.time.delayedCall(120, () => sfx.play('slotWin'));
             this.scene.time.delayedCall(250, resolve);
           }
         });
@@ -185,6 +189,7 @@ export class ChoiceCards {
         .setOrigin(0.5);
       card.add([bg, band, kind, icon, weightTag, name, desc]);
       card.setScale(0.6).setAlpha(0);
+      this.scene.time.delayedCall(i * 90, () => sfx.play('cardAppear', { rate: 1 + i * 0.15, gapMs: 0 }));
       this.scene.tweens.add({ targets: card, scale: 1, alpha: 1, delay: i * 90, duration: 220, ease: 'Back.easeOut' });
       if (interactive) {
         bg.setInteractive({ useHandCursor: true });
@@ -224,6 +229,7 @@ export class ChoiceCards {
     // 畫面中央（root 在 (CX, 330)，畫面中心 y = 360）
     const cx = 0,
       cy = ARENA.height / 2 - 330;
+    sfx.play('cardSpin');
     return new Promise((resolve) => {
       // 1) 旋轉放大飛到中央
       s.tweens.add({
@@ -245,6 +251,7 @@ export class ChoiceCards {
           s.tweens.add({ targets: card, scale: 1.7, duration: 170, ease: 'Quad.easeOut' });
           // 3) 碎成粒子往外飛散
           s.time.delayedCall(170, () => {
+            sfx.play('cardBurst');
             const ox = CX + cx,
               oy = 330 + cy;
             for (let i = 0; i < 46; i++) {

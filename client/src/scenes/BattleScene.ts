@@ -32,6 +32,7 @@ import { banner, damageNumber, dust, explosion, floatingText, FUNCTIONAL_EFFECTS
 import { Hud } from './battle/Hud.js';
 import { CharacterSprite } from './battle/CharacterSprite.js';
 import { CameraDirector } from './battle/CameraDirector.js';
+import { itemHitSound, sfx, SOUNDS } from '../game/sfx.js';
 import { OffscreenMarkers, SpeedLines } from './BattleUIScene.js';
 
 interface DefenseSprite {
@@ -194,6 +195,7 @@ export class BattleScene extends Phaser.Scene {
     this.unsub.forEach((u) => u());
     this.unsub = [];
     store.whenAnimIdle = () => Promise.resolve();
+    sfx.stopCharge();
     this.actionBtn?.remove();
     this.leaveBtn?.remove();
     this.actionBtn = this.leaveBtn = null;
@@ -282,6 +284,8 @@ export class BattleScene extends Phaser.Scene {
 
   private removeDefense(uid: string, ds: DefenseSprite, style: 'fade' | 'break' | 'fall'): void {
     this.defenses.delete(uid);
+    if (style === 'break') sfx.play('breakDef');
+    else if (style === 'fall') sfx.play('defFall', { vol: 0.6 });
     if (style === 'fall') {
       this.tweens.add({ targets: ds.root, y: ds.root.y + 120, alpha: 0, angle: ds.root.angle + 40, duration: 500, ease: 'Quad.easeIn', onComplete: () => ds.root.destroy() });
       return;
@@ -387,6 +391,7 @@ export class BattleScene extends Phaser.Scene {
         this.enqueue(async () => {
           const name = store.snapshot?.players[e.seat]?.name ?? '';
           this.focusSeat(e.seat);
+          sfx.play('turnStart');
           banner(this.ui, e.seat === mySeat ? '輪到你了！' : `輪到 ${name}`, e.seat === 0 ? 0x3d7bd8 : 0xd8463d, 800);
           await wait(this, 450);
           for (const d of e.statusDamage) {
@@ -430,6 +435,7 @@ export class BattleScene extends Phaser.Scene {
                 if (i > 2 && Math.abs(arr[i][1] - arr[i - 1][1]) < 0.3 && arr[i][1] > arr[0][1] + 5) {
                   landed = true;
                   puff(this, arr[i][0], arr[i][1] + e.defense.h / 2);
+                  sfx.play(SOUNDS[`place_${e.defense.itemId}`] ? `place_${e.defense.itemId}` : 'defFall');
                 }
               }
             },
@@ -453,6 +459,7 @@ export class BattleScene extends Phaser.Scene {
           if (selfOnly) this.focusSeat(e.seat);
           else this.focusBoth();
           await wait(this, 450);
+          sfx.play(SOUNDS[`use_${e.itemId}`] ? `use_${e.itemId}` : 'status');
           if (fx) await fx(this, { seat: e.seat, enemy, target, itemId: e.itemId, xOf: (s) => this.xOf(s) });
           else this.cameras.main.flash(200);
           this.applyDamages(e.damages);
@@ -468,6 +475,7 @@ export class BattleScene extends Phaser.Scene {
       case 'skip':
         this.enqueue(async () => {
           this.focusSeat(e.seat);
+          sfx.play('skip');
           const text =
             e.reason === 'stunned'
               ? `${store.snapshot?.players[e.seat]?.name ?? ''} 被機車鎖鎖住，跳過這回合！`
@@ -484,6 +492,7 @@ export class BattleScene extends Phaser.Scene {
           this.focusBoth();
           this.chars[loser]?.die();
           this.chars[e.winnerSeat]?.celebrate();
+          sfx.play(store.mySeat === loser ? 'lose' : 'win');
           await wait(this, 900);
         });
         break;
@@ -493,6 +502,7 @@ export class BattleScene extends Phaser.Scene {
   private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number }[]): void {
     for (const d of damages) {
       if (d.source === 'crush') {
+        sfx.play('crush');
         damageNumber(this, this.xOf(d.seat), d.amount, '#ff7043', '被壓到！', '-', true);
         this.cameras.main.shake(220, 0.01);
         puff(this, this.xOf(d.seat), ARENA.groundY - 120);
@@ -502,6 +512,11 @@ export class BattleScene extends Phaser.Scene {
       }
       const color = d.headshot ? '#ff5252' : d.source === 'direct' ? '#ffeb3b' : d.source === 'functional' ? '#ffd54f' : '#ffffff';
       const bounceTag = d.bounces ? `彈地${d.bounces}次 ` : '';
+      if (d.source === 'direct') {
+        sfx.play('punch');
+        sfx.play('oof', { rate: 0.9 + Math.random() * 0.25 });
+        if (d.headshot) sfx.play('headshot');
+      } else if (d.source === 'status') sfx.play('oof', { vol: 0.5, rate: 1.1 });
       damageNumber(this, this.xOf(d.seat), d.amount, color, d.headshot ? bounceTag + '爆頭！' : d.source === 'direct' ? bounceTag + '直擊' : undefined, '-', d.source === 'direct');
       if (d.headshot) this.cameras.main.shake(300, 0.014);
       this.hitCharacter(d.seat, d.source === 'direct');
@@ -567,6 +582,17 @@ export class BattleScene extends Phaser.Scene {
           if (low && vPrev > 2.5 && vNow <= 0.5) {
             puff(this, cx(a), ARENA.groundY);
             this.cameras.main.shake(90, Math.min(0.006, 0.0006 * vPrev));
+            sfx.play('bodyThud', { vol: Math.min(1, 0.3 + vPrev / 12), gapMs: 110 });
+          }
+          // 被打飛的連續動作換圖時的音效
+          const fa = a[4] ?? 0,
+            fb = b[4] ?? 0;
+          if (fa !== fb) {
+            if (fa === 2 && fb === 1) sfx.play('knockWhoosh');
+            else if ((fa === 3 || fa === 4) && (fb === 3 || fb === 4)) sfx.play('roll', { gapMs: 80 });
+            else if ((fa === 3 || fa === 4) && fb === 2) sfx.play('bodyThud', { gapMs: 80 });
+            else if (fa === 5) sfx.play('bodyThud', { vol: 0.6, rate: 0.9, gapMs: 80 });
+            else if (fa === 2 && fb === 5) sfx.play('getUp');
           }
         }
         opts.onFrame?.(k);
@@ -649,6 +675,9 @@ export class BattleScene extends Phaser.Scene {
     this.chars[e.seat]?.flash('throw', 450);
     await wait(this, 140); // 出手前的一點點蓄勢
     const proj = this.add.image(start[0], start[1], key).setDepth(46);
+    // 出手的咻聲：重的東西比較低沉，越大力越大聲
+    const kg = item?.kind === 'throwable' ? item.weightKg ?? 0.5 : 0.5;
+    sfx.play(kg >= 0.5 ? 'throwHeavy' : 'throwLight', { vol: 0.5 + e.power * 0.6, rate: kg >= 1 ? 0.85 : 1 });
     fitInto(proj, item?.kind === 'throwable' ? Math.max(32, item.radius * 3.4) : 32);
     if (!this.textures.exists('fx:dot')) {
       const g = this.make.graphics({}, false);
@@ -674,7 +703,10 @@ export class BattleScene extends Phaser.Scene {
       },
       onFrame: (k) => {
         // 投擲物落地彈起
-        if (e.bounceFrames?.includes(k) && e.frames.p?.[k]) puff(this, e.frames.p[k][0], ARENA.groundY);
+        if (e.bounceFrames?.includes(k) && e.frames.p?.[k]) {
+          puff(this, e.frames.p[k][0], ARENA.groundY);
+          sfx.play('groundBounce', { gapMs: 90 });
+        }
         // 被倒下的防禦道具壓到
         const crush = e.damages.filter((d) => d.frame === k);
         if (crush.length) this.applyDamages(crush);
@@ -707,6 +739,10 @@ export class BattleScene extends Phaser.Scene {
     const strength = Phaser.Math.Clamp(Math.sqrt(kg) * 0.55 + (direct ? direct.amount / 70 : 0) + (direct?.headshot ? 0.3 : 0), 0, 1);
     // 鏡頭停在命中點附近（不再跟著投擲物）
     const hold = this.director.wideShot([e.impact.x - 200, e.impact.x + 200], 4);
+    // 命中音效：每個投擲物有自己的聲音
+    if (e.impact.kind === 'character' || e.impact.kind === 'defense') sfx.play(itemHitSound(e.itemId), { vol: e.impact.kind === 'defense' ? 0.8 : 1 });
+    if (e.impact.kind === 'defense') sfx.play('block');
+    if (e.impact.kind === 'platform') sfx.play('miss');
     if (e.impact.kind === 'out') {
       floatingText(this, Phaser.Math.Clamp(e.impact.x, 60, ARENA.world.width - 60), ARENA.groundY - 120, '飛出場外！', '#ffffff');
       this.director.set({ ...hold, x: Phaser.Math.Clamp(e.impact.x, 0, ARENA.world.width), zoom: CAMERA.followZoom });
@@ -785,7 +821,10 @@ export class BattleScene extends Phaser.Scene {
     // 先收起所有互動元件，再依階段打開
     this.placement.hide();
     this.target.hide();
-    if (!t || !['aimAngle', 'aimPower'].includes(t.phase)) this.aim.hide();
+    if (!t || !['aimAngle', 'aimPower'].includes(t.phase)) {
+      this.aim.hide();
+      sfx.stopCharge();
+    }
     if (!t || !['draw', 'choose'].includes(t.phase)) {
       this.slot.hide();
       this.cards.hide();
@@ -889,6 +928,7 @@ export class BattleScene extends Phaser.Scene {
       if (this.charging) {
         const elapsed = (performance.now() - this.chargeStart) / 1000;
         this.localPower = Math.min(AIM_CONFIG.maxPower, AIM_CONFIG.minPower + elapsed / AIM_CONFIG.chargeSeconds);
+        sfx.charge(this.localPower);
       }
       this.aim.draw(t.activeSeat, this.xOf(t.activeSeat), this.localAngle, this.charging ? this.localPower : null);
       // 把瞄準狀態即時分享給對手（每秒 10 次）
@@ -964,6 +1004,7 @@ export class BattleScene extends Phaser.Scene {
   private releaseThrow(): void {
     const t = store.snapshot?.turn;
     this.charging = false;
+    sfx.stopCharge();
     if (!t || !this.isMyAim() || this.localAngle === null || this.localPower === null) return;
     const angle = round1(this.localAngle);
     const power = Math.round(this.localPower * 1000) / 1000;

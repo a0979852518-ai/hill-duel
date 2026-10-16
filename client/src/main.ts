@@ -10,6 +10,27 @@ import { BackdropScene, BootScene } from './scenes/BootScene.js';
 import { store } from './state/store.js';
 import { clearUi, showCharacterSelect, showGameOver, showMenu, showWaiting } from './ui/screens.js';
 import { toast } from './ui/toast.js';
+import { sfx } from './game/sfx.js';
+
+// 音效開關（記在這台裝置上）＋所有按鈕的點擊聲
+const muteBtn = document.createElement('button');
+muteBtn.className = 'mute-btn';
+const renderMute = () => {
+  muteBtn.textContent = sfx.muted ? '🔇' : '🔊';
+  muteBtn.title = sfx.muted ? '開啟音效' : '關閉音效';
+};
+renderMute();
+muteBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  sfx.setMuted(!sfx.muted);
+  renderMute();
+  sfx.play('click');
+});
+document.body.appendChild(muteBtn);
+document.addEventListener('click', (e) => {
+  const el = e.target as HTMLElement | null;
+  if (el && el !== muteBtn && el.closest('button, .char-card')) sfx.play('click');
+});
 
 const net = new Network();
 store.net = net;
@@ -100,4 +121,4 @@ window.addEventListener('hillduel:left', () => {
 });
 
 // 開發時方便除錯
-(window as unknown as { __hillduel: unknown }).__hillduel = { store, game };
+(window as unknown as { __hillduel: unknown }).__hillduel = { store, game, sfx };
