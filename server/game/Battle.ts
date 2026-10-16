@@ -47,8 +47,9 @@ export class Battle {
     maxHp: [number, number],
     private readonly hooks: BattleHooks,
     private readonly rng: Rng = Math.random,
+    characterIds: [string | null, string | null] = [null, null],
   ) {
-    this.state = new BattleState(maxHp);
+    this.state = new BattleState(maxHp, characterIds);
   }
 
   // ------------------------------------------------------------ 生命週期
@@ -231,6 +232,8 @@ export class Battle {
 
   private eligible(item: ItemDef): boolean {
     const seat = this.activeSeat;
+    // 角色專屬卡牌
+    if (item.exclusiveTo && !item.exclusiveTo.includes(this.state.characterIds[seat] ?? '')) return false;
     if (item.kind === 'defense') return canPlaceMore(this.state, seat, item);
     if (item.kind === 'functional') {
       const h = getHandler(item.handler);
@@ -250,9 +253,9 @@ export class Battle {
     this.chosenItemId = null;
     this.angle = null;
 
-    const { damage: statusDamage, skip: stunned } = this.state.tickStatusesStart(seat);
+    const { damage: statusDamage, skip: stunned, heals } = this.state.tickStatusesStart(seat);
     const expiredDefenses = this.state.tickDefenses(seat);
-    this.hooks.onEvent({ type: 'turnStart', seat, turnId: this.turnId, statusDamage, expiredDefenses });
+    this.hooks.onEvent({ type: 'turnStart', seat, turnId: this.turnId, statusDamage, expiredDefenses, ...(heals.length ? { heals } : {}) });
     // 有道具消失時，上面疊的東西會掉下來
     const settleMs = expiredDefenses.length ? this.settleAndEmit() : 0;
     this.hooks.onChange();
@@ -268,7 +271,7 @@ export class Battle {
       this.later(GAME_CONFIG.turnStartEffectMs, () => this.skip('stunned'));
       return;
     }
-    const delay = (statusDamage.length || expiredDefenses.length ? GAME_CONFIG.turnStartEffectMs : 600) + settleMs;
+    const delay = (statusDamage.length || expiredDefenses.length || heals.length ? GAME_CONFIG.turnStartEffectMs : 600) + settleMs;
     const myTurn = this.turnId;
     this.later(delay, () => {
       if (this.turnId !== myTurn) return;

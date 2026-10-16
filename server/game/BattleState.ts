@@ -2,6 +2,7 @@
 // 傷害、防禦耐久、狀態全部只在這裡改，避免各模組各算各的。
 
 import { ARENA } from '../../shared/config/game.js';
+import { traitsOf, type CharacterTraits } from '../../shared/config/characters.js';
 import { getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
 import type { DamageEntry, DefenseUpdate, DefenseView, HealEntry, Seat, StatusView, StuckItem } from '../../shared/types.js';
 import { PhysicsWorld } from './PhysicsWorld.js';
@@ -29,7 +30,11 @@ export class BattleState {
   readonly physics = new PhysicsWorld();
   private uidCounter = 0;
 
-  constructor(maxHp: [number, number]) {
+  /** 雙方的角色 id（決定被動技能） */
+  readonly characterIds: [string | null, string | null];
+
+  constructor(maxHp: [number, number], characterIds: [string | null, string | null] = [null, null]) {
+    this.characterIds = characterIds;
     this.fighters = [
       { seat: 0, hp: maxHp[0], maxHp: maxHp[0], statuses: [], x: ARENA.characterStartX[0], stuck: [] },
       { seat: 1, hp: maxHp[1], maxHp: maxHp[1], statuses: [], x: ARENA.characterStartX[1], stuck: [] },
@@ -39,6 +44,10 @@ export class BattleState {
   nextUid(prefix: string): string {
     this.uidCounter += 1;
     return `${prefix}${this.uidCounter}`;
+  }
+
+  traits(seat: Seat): CharacterTraits {
+    return traitsOf(this.characterIds[seat]);
   }
 
   /** 某玩家目前所有狀態的倍率相乘 */
@@ -53,9 +62,13 @@ export class BattleState {
    * 造成傷害。attacker 有填時會套用攻擊者的「造成傷害倍率」（噁心、蛋白質），
    * 一律套用受害者的「受到傷害倍率」（精神傷害）。
    */
-  dealDamage(seat: Seat, amount: number, source: DamageEntry['source'], attacker?: Seat, statusId?: string): DamageEntry | null {
+  dealDamage(seat: Seat, amount: number, source: DamageEntry['source'], attacker?: Seat, statusId?: string, itemId?: string): DamageEntry | null {
     let raw = amount * this.multiplier(seat, 'incomingMultiplier');
-    if (attacker !== undefined) raw *= this.multiplier(attacker, 'outgoingMultiplier');
+    const t = this.traits(seat);
+    // 角色弱點/抗性：被特定道具打、特定狀態的持續傷害
+    if (itemId) raw *= t.incomingByItem?.[itemId] ?? 1;
+    if (statusId) raw *= t.statusDamageMultiplier?.[statusId] ?? 1;
+    if (attacker !== undefined) raw *= this.multiplier(attacker, 'outgoingMultiplier') * (this.traits(attacker).outgoingMultiplier ?? 1);
     const dmg = Math.max(0, Math.round(raw));
     if (dmg <= 0) return null;
     const f = this.fighters[seat];
@@ -113,8 +126,10 @@ export class BattleState {
     return this.fighters[seat].statuses.reduce((n, s) => n + (getStatus(s.statusId)?.hideDrawOptions ?? 0), 0);
   }
 
-  applyStatus(seat: Seat, statusId: string, turns: number): void {
-    if (!getStatus(statusId)) return;
+  /** 附加狀態；回傳 false = 沒附加上（角色免疫） */
+  applyStatus(seat: Seat, statusId: string, turns: number): boolean {
+    if (!getStatus(statusId)) return false;
+    if (this.traits(seat).immuneStatuses?.includes(statusId)) return false;
     const f = this.fighters[seat];
     const def = getStatus(statusId)!;
     const existing = f.statuses.find((s) => s.statusId === statusId);
@@ -123,14 +138,22 @@ export class BattleState {
       if (def.stackable) existing.stacks = (existing.stacks ?? 1) + 1;
       existing.remainingTurns = Math.max(existing.remainingTurns, turns);
     } else f.statuses.push(def.stackable ? { statusId, remainingTurns: turns, stacks: 1 } : { statusId, remainingTurns: turns });
+    return true;
   }
 
   /**
    * 該玩家回合開始時：結算持續傷害、判斷是否被跳過回合、遞減 decrementAt='start' 的狀態。
    */
-  tickStatusesStart(seat: Seat): { damage: DamageEntry[]; skip: boolean } {
+  tickStatusesStart(seat: Seat): { damage: DamageEntry[]; skip: boolean; heals: HealEntry[] } {
     const f = this.fighters[seat];
     const damage: DamageEntry[] = [];
+    const heals: HealEntry[] = [];
+    // 鄭霖澤：身上黏著 poopoo恩 → 每回合回血
+    const regen = this.traits(seat).stuckRegen ?? 0;
+    if (regen > 0 && f.stuck.length > 0 && f.hp > 0 && f.hp < f.maxHp) {
+      const h = this.heal(seat, regen);
+      if (h && h.amount > 0) heals.push(h);
+    }
     let skip = false;
     for (const s of [...f.statuses]) {
       const def = getStatus(s.statusId);
@@ -142,7 +165,7 @@ export class BattleState {
       if (def.skipTurn) skip = true;
     }
     this.decrement(seat, 'start');
-    return { damage, skip };
+    return { damage, skip, heals };
   }
 
   /** 該玩家回合結束時：遞減 decrementAt='end' 的狀態 */

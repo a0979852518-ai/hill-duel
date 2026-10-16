@@ -44,12 +44,17 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
 
     // 2) 角色傷害：直擊 or 爆炸波及（自己的爆炸也可能炸到自己）
     const hitSeats: Seat[] = [];
+    // 彈地後才打到：傷害照算（每彈一次減半），但道具的特殊效果不算
+    // （例外：角色技能指定的道具彈地照樣觸發，例如機車鎖打捲毛）
+    const bounced = (impact.bounces ?? 0) > 0;
+    const effectsOn = (target: Seat) => !bounced || !!state.traits(target).bounceTriggers?.includes(item.id);
     let stickAt: { seat: Seat; x: number; y: number; feetX: number } | null = null;
     for (const target of [0, 1] as Seat[]) {
       let amount = 0;
       let source: DamageEntry['source'] = 'splash';
       let headshot = false;
       let bounces = 0;
+      let crit = false;
       if (impact.kind === 'character' && impact.hitSeat === target) {
         amount = item.damage;
         source = 'direct';
@@ -58,15 +63,24 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
         amount *= Math.pow(0.5, bounces);
         // 打到頭（身體上緣以上）傷害 ×1.5，可再和其他倍率（精神傷害、乳清…）相乘
         if (impact.y < headLineY()) {
-          amount *= HEADSHOT_MULTIPLIER;
+          // 李信安（物理系）爆頭 ×2
+          amount *= state.traits(seat).headshotMultiplier ?? HEADSHOT_MULTIPLIER;
           headshot = true;
+        }
+        // 捲毛：自己丟的快煮鍋直接命中（沒彈地）爆擊
+        const critMul = state.traits(seat).critItems?.[item.id];
+        if (critMul && bounces === 0) {
+          amount *= critMul;
+          crit = true;
         }
         // 擊退：越重、越快的東西推得越遠
         // 擊退特別強的道具（快煮鍋）上限也跟著放大
-        knockSpeed = Math.min(KNOCKBACK.maxSpeed * Math.max(1, item.knockScale ?? 1), (item.knockScale ?? 1) * KNOCKBACK.k * Math.sqrt(item.weightKg ?? 0.5) * (impactSpeed / 1500) * (headshot ? KNOCKBACK.headshotBonus : 1));
+        // 彈地後打到：快煮鍋「打飛特別遠」也算特殊效果，不放大
+        const knockScale = effectsOn(target) ? item.knockScale ?? 1 : Math.min(1, item.knockScale ?? 1);
+        knockSpeed = Math.min(KNOCKBACK.maxSpeed * Math.max(1, knockScale), knockScale * KNOCKBACK.k * Math.sqrt(item.weightKg ?? 0.5) * (impactSpeed / 1500) * (headshot ? KNOCKBACK.headshotBonus : 1));
         knockSeat = target;
         // 黏在身上（poopoo恩）：記下命中點相對腳底的位置
-        if (item.sticky) stickAt = { seat: target, x: impact.x, y: impact.y, feetX: state.physics.getCharX(target) };
+        if (item.sticky && effectsOn(target)) stickAt = { seat: target, x: impact.x, y: impact.y, feetX: state.physics.getCharX(target) };
       } else if (item.explosionRadius > 0 && impact.kind !== 'out') {
         const dist = distPointRect(impact.x, impact.y, characterHitbox(state.physics.getCharX(target)));
         if (dist <= item.explosionRadius) {
@@ -76,8 +90,9 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
       }
       if (amount <= 0) continue;
       if (reductionFor === target) amount *= 1 - reduction;
-      const entry = state.dealDamage(target, amount, source, seat);
+      const entry = state.dealDamage(target, amount, source, seat, undefined, item.id);
       if (entry && headshot) entry.headshot = true;
+      if (entry && crit) entry.crit = true;
       if (entry && bounces > 0) entry.bounces = bounces;
       if (entry) {
         damages.push(entry);
@@ -96,9 +111,9 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     }
 
     // 3) 附加狀態（只附加給敵人）
-    if (item.onHitStatus && hitSeats.includes(enemy)) {
-      state.applyStatus(enemy, item.onHitStatus.statusId, item.onHitStatus.turns);
-      statusApplied = { seat: enemy, statusId: item.onHitStatus.statusId, turns: item.onHitStatus.turns };
+    if (item.onHitStatus && hitSeats.includes(enemy) && effectsOn(enemy)) {
+      const ok = state.applyStatus(enemy, item.onHitStatus.statusId, item.onHitStatus.turns);
+      statusApplied = { seat: enemy, statusId: item.onHitStatus.statusId, turns: item.onHitStatus.turns, ...(ok ? {} : { immune: true }) };
     }
     return { remove: destroyedNow, knock };
   });

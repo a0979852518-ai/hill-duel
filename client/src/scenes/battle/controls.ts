@@ -45,7 +45,7 @@ export class SlotMachine {
   private spinTimer: Phaser.Time.TimerEvent | null = null;
   private state: 'hidden' | 'spinning' | 'landing' | 'landed' = 'hidden';
   private landPromise: Promise<void> = Promise.resolve();
-  private ids = ITEMS.filter((i) => i.enabled !== false).map((i) => i.id);
+  private ids = ITEMS.filter((i) => i.enabled !== false && !i.exclusiveTo).map((i) => i.id);
 
   constructor(private scene: Phaser.Scene) {
     this.root = scene.add.container(CX, 300).setDepth(60).setVisible(false);

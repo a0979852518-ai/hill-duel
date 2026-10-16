@@ -10,6 +10,7 @@
 import * as Phaser from 'phaser';
 import { AIM_CONFIG, ARENA, CAMERA } from '../../../shared/config/game.js';
 import { getItem, type DefenseDef } from '../../../shared/config/items.js';
+import { getCharacter, scaledDefenseSize } from '../../../shared/config/characters.js';
 import { characterHitbox, defenseRect, launchPoint } from '../../../shared/physics.js';
 import {
   ERROR_TEXT,
@@ -71,6 +72,8 @@ export class BattleScene extends Phaser.Scene {
   private lastPreviewSent = 0;
   private actionBtn: HTMLButtonElement | null = null;
   private leaveBtn: HTMLButtonElement | null = null;
+  private skillBtn: HTMLButtonElement | null = null;
+  private skillPanel: HTMLElement | null = null;
 
   // 鏡頭與螢幕層
   private ui!: Phaser.Scene;
@@ -145,6 +148,8 @@ export class BattleScene extends Phaser.Scene {
     });
     this.input.keyboard?.on('keydown-ONE', () => this.pickByIndex(0));
     this.input.keyboard?.on('keydown-TWO', () => this.pickByIndex(1));
+    // Q：看自己角色的技能
+    this.input.keyboard?.on('keydown-Q', () => this.toggleSkills());
 
     store.whenAnimIdle = () => this.waitIdle();
     this.createDomButtons();
@@ -198,7 +203,10 @@ export class BattleScene extends Phaser.Scene {
     sfx.stopCharge();
     this.actionBtn?.remove();
     this.leaveBtn?.remove();
-    this.actionBtn = this.leaveBtn = null;
+    this.skillBtn?.remove();
+    this.skillPanel?.remove();
+    this.actionBtn = this.leaveBtn = this.skillBtn = null;
+    this.skillPanel = null;
     this.placement?.hide();
     clearTimeout(this.hitstopTimer);
     this.ready = false;
@@ -401,6 +409,10 @@ export class BattleScene extends Phaser.Scene {
             this.hitCharacter(d.seat);
             this.hud.setHp(d.seat, d.hpAfter);
           }
+          for (const h of e.heals ?? []) {
+            damageNumber(this, this.xOf(h.seat), h.amount, '#69f0ae', '便便回血', '+');
+            this.hud.setHp(h.seat, h.hpAfter);
+          }
           for (const uid of e.expiredDefenses) {
             const ds = this.defenses.get(uid);
             if (ds) {
@@ -408,7 +420,7 @@ export class BattleScene extends Phaser.Scene {
               this.removeDefense(uid, ds, 'fade');
             }
           }
-          await wait(this, e.statusDamage.length || e.expiredDefenses.length ? 700 : 150);
+          await wait(this, e.statusDamage.length || e.expiredDefenses.length || e.heals?.length ? 700 : 150);
         });
         break;
       case 'slotResult':
@@ -500,7 +512,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number }[]): void {
+  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean }[]): void {
     for (const d of damages) {
       if (d.source === 'crush') {
         sfx.play('crush');
@@ -518,16 +530,33 @@ export class BattleScene extends Phaser.Scene {
         sfx.play('oof', { rate: 0.9 + Math.random() * 0.25 });
         if (d.headshot) sfx.play('headshot');
       } else if (d.source === 'status') sfx.play('oof', { vol: 0.5, rate: 1.1 });
-      damageNumber(this, this.xOf(d.seat), d.amount, color, d.headshot ? bounceTag + '爆頭！' : d.source === 'direct' ? bounceTag + '直擊' : undefined, '-', d.source === 'direct');
+      const critTag = d.crit ? '爆擊！' : '';
+      damageNumber(
+        this,
+        this.xOf(d.seat),
+        d.amount,
+        d.crit ? '#ff9100' : color,
+        d.headshot ? bounceTag + critTag + '爆頭！' : d.source === 'direct' ? bounceTag + (critTag || '直擊') : undefined,
+        '-',
+        d.source === 'direct',
+      );
+      if (d.crit) {
+        sfx.play('headshot');
+        this.cameras.main.flash(120, 255, 160, 0);
+      }
       if (d.headshot) this.cameras.main.shake(300, 0.014);
       this.hitCharacter(d.seat, d.source === 'direct');
       this.hud.setHp(d.seat, d.hpAfter);
     }
   }
 
-  private showStatusApplied(st: { seat: Seat; statusId: string; turns: number }): void {
+  private showStatusApplied(st: { seat: Seat; statusId: string; turns: number; immune?: boolean }): void {
     const def = getStatus(st.statusId);
     const box = characterHitbox(this.xOf(st.seat));
+    if (st.immune) {
+      floatingText(this, box.x + box.w / 2, box.y - 95, `免疫${def?.name.replace(/（.*）/, '') ?? ''}！`, '#ffffff');
+      return;
+    }
     const turns = st.turns >= PERMANENT_TURNS ? '' : ` ${st.turns} 回合`;
     floatingText(this, box.x + box.w / 2, box.y - 95, `${def?.name ?? st.statusId}${turns}`, '#' + (def?.color ?? 0xffffff).toString(16).padStart(6, '0'));
   }
@@ -882,7 +911,8 @@ export class BattleScene extends Phaser.Scene {
           this.placement.show(
             t.activeSeat,
             this.xOf(t.activeSeat),
-            item,
+            // 捲毛的回收紙箱比較大
+            { ...item, size: scaledDefenseSize(item.size, item.id, snap.players[t.activeSeat]?.characterId) },
             mine,
             snap.defenses,
             defKey(item.id),
@@ -1092,6 +1122,41 @@ export class BattleScene extends Phaser.Scene {
     });
     app.appendChild(leave);
     this.leaveBtn = leave;
+
+    const skill = document.createElement('button');
+    skill.className = 'btn secondary skill-btn';
+    skill.innerHTML = this.touch ? '技能' : '技能 <small>Q</small>';
+    skill.addEventListener('click', () => this.toggleSkills());
+    app.appendChild(skill);
+    this.skillBtn = skill;
+  }
+
+  /** 顯示 / 關閉自己角色的技能說明（按 Q 或左下角按鈕） */
+  private toggleSkills(): void {
+    if (this.skillPanel) {
+      this.skillPanel.remove();
+      this.skillPanel = null;
+      return;
+    }
+    const me = store.snapshot?.players[store.mySeat ?? 0];
+    const c = getCharacter(me?.characterId ?? '');
+    if (!c) return;
+    const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!);
+    const cards = (c.exclusiveItems ?? [])
+      .map((id) => getItem(id))
+      .filter((i) => !!i)
+      .map((i) => `<div class="skill-card">${i!.icon ? `<img src="${i!.icon}" alt="">` : ''}<div><b>${esc(i!.name)}</b><br>${esc(i!.description)}</div></div>`)
+      .join('');
+    const panel = document.createElement('div');
+    panel.className = 'skill-panel';
+    panel.innerHTML = `
+      <div class="skill-head">${c.portrait ? `<img src="${c.portrait}" alt="">` : ''}<div><div class="skill-name">${esc(c.name)}</div><div class="skill-hp">初始血量 ${c.maxHp}</div></div></div>
+      ${c.skills?.length ? `<ul>${c.skills.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : '<p>這個角色沒有特殊技能。</p>'}
+      ${cards ? `<div class="skill-sub">專屬卡牌</div>${cards}` : ''}
+      <div class="skill-close">${this.touch ? '點一下關閉' : '再按 Q 或點一下關閉'}</div>`;
+    panel.addEventListener('click', () => this.toggleSkills());
+    document.getElementById('app')!.appendChild(panel);
+    this.skillPanel = panel;
   }
 
   private setAction(label: string | null): void {

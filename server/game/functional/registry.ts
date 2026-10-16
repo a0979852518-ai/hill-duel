@@ -23,7 +23,7 @@ export interface FunctionalResult {
   damages: DamageEntry[];
   heals?: HealEntry[];
   defenseUpdates: DefenseUpdate[];
-  statusApplied?: { seat: Seat; statusId: string; turns: number }[];
+  statusApplied?: { seat: Seat; statusId: string; turns: number; immune?: boolean }[];
 }
 
 export interface FunctionalHandler {
@@ -48,7 +48,10 @@ const handlers: Record<string, FunctionalHandler> = {
     execute({ state, seat, enemy, item }) {
       const amount = Number(item.params.damage ?? 50);
       // 自己那一下不套用自己的增傷（乳清）
-      const damages = [state.dealDamage(enemy, amount, 'functional', seat), state.dealDamage(seat, amount, 'functional')].filter(
+      const damages = [
+        state.dealDamage(enemy, amount, 'functional', seat, undefined, item.id),
+        state.dealDamage(seat, amount, 'functional', undefined, undefined, item.id),
+      ].filter(
         (d): d is DamageEntry => d !== null,
       );
       return { damages, defenseUpdates: [] };
@@ -61,8 +64,8 @@ const handlers: Record<string, FunctionalHandler> = {
       const target: Seat = item.params.target === 'self' ? seat : enemy;
       const statusId = String(item.params.statusId);
       const turns = Number(item.params.turns ?? 1);
-      state.applyStatus(target, statusId, turns);
-      return { damages: [], defenseUpdates: [], statusApplied: [{ seat: target, statusId, turns }] };
+      const ok = state.applyStatus(target, statusId, turns);
+      return { damages: [], defenseUpdates: [], statusApplied: [{ seat: target, statusId, turns, ...(ok ? {} : { immune: true }) }] };
     },
   },
 

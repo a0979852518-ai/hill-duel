@@ -196,7 +196,9 @@ export class Room {
     const hpA = getCharacter(a.characterId!)!.maxHp;
     const hpB = getCharacter(b.characterId!)!.maxHp;
     this.status = 'battle';
-    this.battle = new Battle([hpA, hpB], {
+    this.battle = new Battle(
+      [hpA, hpB],
+      {
       onChange: () => this.broadcast(),
       onEvent: (e) => this.io.to(this.code).emit('game:event', e),
       onGameOver: (winner, reason) => {
@@ -206,7 +208,10 @@ export class Room {
         this.broadcast();
         this.scheduleCleanup(5 * 60_000);
       },
-    });
+      },
+      Math.random,
+      [a.characterId, b.characterId],
+    );
     const first: Seat = GAME_CONFIG.firstTurn === 'host' ? 0 : Math.random() < 0.5 ? 0 : 1;
     for (const p of this.players) {
       if (!p?.bot) continue;

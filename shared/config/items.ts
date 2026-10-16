@@ -34,6 +34,8 @@ interface ItemBase {
   enabled?: boolean;
   /** 真實重量（公斤），選道具時顯示；投擲物還會影響擊退的力道與樣式（預設 0.5） */
   weightKg?: number;
+  /** 角色專屬卡牌：只有這些角色抽得到（角色 id） */
+  exclusiveTo?: string[];
 }
 
 /** 命中時附加的狀態效果 */
@@ -249,6 +251,28 @@ export const ITEMS: ItemDef[] = [
     splashMultiplier: 0.5,
   },
   {
+    id: 'volleyball',
+    kind: 'throwable',
+    name: '排球',
+    description: '李信安專屬。命中傷害 45。',
+    icon: 'assets/items/volleyball.png',
+    sprite: 'assets/items/volleyball.png',
+    placeholder: { shape: 'circle', color: 0xf2c80f },
+    exclusiveTo: ['lixinan'],
+    tags: ['light'],
+    damage: 45,
+    // 正式排球約 270 公克，體積大、空氣阻力明顯
+    weightKg: 0.27,
+    frictionAir: 0.0016,
+    minSpeed: 420,
+    maxSpeed: 2500,
+    gravityScale: 1,
+    radius: 18,
+    spin: 0.2,
+    explosionRadius: 30,
+    splashMultiplier: 0.5,
+  },
+  {
     id: 'acCard',
     kind: 'throwable',
     name: '侯宸宇的冷氣卡',
@@ -401,6 +425,36 @@ export const ITEMS: ItemDef[] = [
     handler: 'heal',
     targeting: 'none',
     params: { amount: 15 },
+  },
+
+  {
+    id: 'hospital',
+    kind: 'functional',
+    role: 'defense',
+    name: '住院',
+    description: '葉柄承專屬。躺好躺滿，回復 50 血（不會超過上限）。',
+    icon: 'assets/items/hospital.png',
+    placeholder: { shape: 'rect', color: 0x3f51b5 },
+    exclusiveTo: ['yebingcheng'],
+    weightKg: 80,
+    handler: 'heal',
+    targeting: 'none',
+    params: { amount: 50 },
+  },
+  {
+    id: 'beastFan',
+    kind: 'functional',
+    role: 'attack',
+    name: '獸控',
+    description: '葉柄承專屬。使用後，下一個自己的回合造成的傷害 ×2。',
+    icon: 'assets/items/beastfan.png',
+    placeholder: { shape: 'rect', color: 0x2e7d32 },
+    exclusiveTo: ['yebingcheng'],
+    weightKg: 0.3,
+    handler: 'applyStatus',
+    targeting: 'none',
+    // 2 回合、回合結束時遞減：這回合結束剩 1 → 下一個自己的回合有效 → 結束後消失
+    params: { statusId: 'beast', turns: 2, target: 'self' },
   },
 
   // ================= 以下是最早的臨時道具（已停用，改 enabled: true 可加回抽取池） =================
@@ -569,6 +623,7 @@ export const STATUSES: StatusDef[] = [
   { id: 'blind', name: '冷氣卡封印', hideDrawOptions: 1, color: 0x4fc3f7, decrementAt: 'end' },
   { id: 'disgust', name: '噁心（傷害減半）', outgoingMultiplier: 0.5, color: 0xc0ca33, decrementAt: 'end' },
   { id: 'mental', name: '精神傷害（受傷×1.2/層）', incomingMultiplier: 1.2, stackable: true, color: 0xab47bc, decrementAt: 'start' },
+  { id: 'beast', name: '獸控（傷害×2）', outgoingMultiplier: 2, color: 0x43a047, decrementAt: 'end' },
   { id: 'buff', name: '蛋白質加持（傷害×1.2/層）', outgoingMultiplier: 1.2, stackable: true, color: 0xff7043, decrementAt: 'end' },
 ];
 

@@ -2,6 +2,7 @@
 // 用 HTML 做選單比較好打字、複製房號，也比較適合手機。
 
 import { PLAYABLE_CHARACTERS } from '../../../shared/config/characters.js';
+import { getItem } from '../../../shared/config/items.js';
 import { ERROR_TEXT, type AiDifficulty, type ErrorCode, type RoomSnapshot, type Seat } from '../../../shared/types.js';
 import { loadName } from '../net/Network.js';
 import { store } from '../state/store.js';
@@ -164,6 +165,16 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
           <div class="cname">${esc(c.name)}</div>
           <div class="hp">HP ${c.maxHp}</div>
           <div class="desc">${esc(c.description)}</div>
+          ${c.skills?.length ? `<ul class="skills">${c.skills.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
+          ${
+            c.exclusiveItems?.length
+              ? `<div class="ex">${c.exclusiveItems
+                  .map((id) => getItem(id))
+                  .filter((i) => i?.icon)
+                  .map((i) => `<img src="${i!.icon}" title="${esc(i!.name)}：${esc(i!.description)}" alt="${esc(i!.name)}">`)
+                  .join('')}</div>`
+              : ''
+          }
         </div>`);
       const portrait = card.querySelector<HTMLElement>('.portrait')!;
       const placeholder = () => {

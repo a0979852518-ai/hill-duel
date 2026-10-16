@@ -161,9 +161,16 @@ export class AiPlayer {
         if (me.hp <= dmg) return -100; // 會先把自己炸死
         return me.hp - foe.hp > dmg ? 6 : -5;
       }
-      case 'applyStatus':
+      case 'applyStatus': {
+        const statusId = String(item.params.statusId);
+        const target: Seat = item.params.target === 'self' ? this.seat : this.seat === 0 ? 1 : 0;
+        // 對方免疫（捲毛不吃絲襪）→ 用了等於白費
+        if (st.traits(target).immuneStatuses?.includes(statusId)) return -10;
+        // 獸控：下回合傷害 ×2，約等於多打一發的期望傷害
+        if (statusId === 'beast') return 12 * hitRate;
         // 永久 ×1.2：越早用越划算
         return 5 + (foe.hp / foe.maxHp) * 4;
+      }
       default:
         return 3;
     }

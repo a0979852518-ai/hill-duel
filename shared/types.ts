@@ -145,6 +145,8 @@ export interface DamageEntry {
   headshot?: boolean;
   /** 先在地上彈了幾次才打到（每次傷害減半） */
   bounces?: number;
+  /** 角色技能的爆擊（捲毛的快煮鍋） */
+  crit?: boolean;
 }
 
 export interface HealEntry {
@@ -165,7 +167,7 @@ export interface DefenseUpdate {
 export type ImpactKind = 'character' | 'defense' | 'platform' | 'out';
 
 export type BattleEvent =
-  | { type: 'turnStart'; seat: Seat; turnId: number; statusDamage: DamageEntry[]; expiredDefenses: string[] }
+  | { type: 'turnStart'; seat: Seat; turnId: number; statusDamage: DamageEntry[]; expiredDefenses: string[]; heals?: HealEntry[] }
   | { type: 'slotResult'; seat: Seat; options: string[]; hiddenSlots: number }
   | { type: 'itemChosen'; seat: Seat; itemId: string }
   | { type: 'aimPreview'; seat: Seat; angle?: number; power?: number }
@@ -183,7 +185,7 @@ export type BattleEvent =
       explosionRadius: number;
       damages: DamageEntry[];
       defenseUpdates: DefenseUpdate[];
-      statusApplied: { seat: Seat; statusId: string; turns: number } | null;
+      statusApplied: { seat: Seat; statusId: string; turns: number; immune?: boolean } | null;
       /** 投擲物落地彈跳的格數 */
       bounceFrames?: number[];
       /** 這次黏到誰身上（poopoo恩） */
@@ -200,7 +202,7 @@ export type BattleEvent =
       damages: DamageEntry[];
       heals: HealEntry[];
       defenseUpdates: DefenseUpdate[];
-      statusApplied: { seat: Seat; statusId: string; turns: number }[];
+      statusApplied: { seat: Seat; statusId: string; turns: number; immune?: boolean }[];
     }
   | { type: 'skip'; seat: Seat; reason: 'drawTimeout' | 'useTimeout' | 'stunned' }
   | { type: 'gameOver'; winnerSeat: Seat; reason: 'hp' | 'forfeit' };
