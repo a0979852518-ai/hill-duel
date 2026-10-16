@@ -761,10 +761,27 @@ export class BattleScene extends Phaser.Scene {
     this.renderPhase(snap);
   }
 
+  /** 選卡特效播放中（期間不能瞄準/放置） */
+  private cardFx = false;
+
   private renderPhase(snap: RoomSnapshot): void {
     const t = snap.turn;
     const mySeat = store.mySeat;
     const mine = !!t && t.activeSeat === mySeat;
+    // 剛選完卡：先播選卡特效（卡片旋轉放大到中央、發光、碎成粒子），播完才進入這個人的使用階段
+    if (t && t.chosenItemId && ['aimAngle', 'aimPower', 'place', 'target'].includes(t.phase) && this.cards.has(t.chosenItemId) && !this.cardFx) {
+      const key = this.phaseKey;
+      this.cardFx = true;
+      this.slot.hide();
+      this.setAction(null);
+      // 保險：最多 1.6 秒就繼續（例如分頁在背景、動畫被中斷）
+      void Promise.race([this.cards.burst(t.chosenItemId), new Promise<void>((r) => setTimeout(r, 1600))]).then(() => {
+        if (!this.cardFx) return;
+        this.cardFx = false;
+        if (this.phaseKey === key && store.snapshot) this.renderPhase(store.snapshot);
+      });
+      return;
+    }
     // 先收起所有互動元件，再依階段打開
     this.placement.hide();
     this.target.hide();
@@ -866,6 +883,7 @@ export class BattleScene extends Phaser.Scene {
     const t = store.snapshot?.turn;
     if (!t || store.snapshot?.status !== 'battle') return;
     if (t.phase !== 'aimAngle' && t.phase !== 'aimPower') return;
+    if (this.cardFx) return;
     if (t.activeSeat === store.mySeat) {
       if (this.busy) return;
       if (this.charging) {
@@ -891,7 +909,7 @@ export class BattleScene extends Phaser.Scene {
 
   private isMyAim(): boolean {
     const t = store.snapshot?.turn;
-    return !!t && store.snapshot?.status === 'battle' && t.activeSeat === store.mySeat && (t.phase === 'aimAngle' || t.phase === 'aimPower') && !this.busy;
+    return !!t && store.snapshot?.status === 'battle' && t.activeSeat === store.mySeat && (t.phase === 'aimAngle' || t.phase === 'aimPower') && !this.busy && !this.cardFx;
   }
 
   /** 畫面外的角色：在畫面邊緣顯示箭頭與距離 */

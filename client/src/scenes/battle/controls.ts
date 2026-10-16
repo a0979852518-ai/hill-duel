@@ -198,6 +198,88 @@ export class ChoiceCards {
     this.root.setVisible(true);
   }
 
+  /** 這張卡片還在畫面上嗎 */
+  has(id: string): boolean {
+    return this.root.visible && (this.root.list as Phaser.GameObjects.Container[]).some((c) => c.getData('id') === id);
+  }
+
+  /**
+   * 選卡特效：選中的卡一邊旋轉一邊放大飛到畫面中央 → 發光 → 碎成粒子消失。
+   * 其他卡片同時淡出。播完自動收起。
+   */
+  burst(id: string): Promise<void> {
+    const s = this.scene;
+    const cards = this.root.list as Phaser.GameObjects.Container[];
+    const card = cards.find((c) => c.getData('id') === id);
+    if (!card) {
+      this.hide();
+      return Promise.resolve();
+    }
+    for (const c of cards) {
+      s.tweens.killTweensOf(c);
+      if (c !== card) s.tweens.add({ targets: c, alpha: 0, scale: 0.7, duration: 220 });
+    }
+    const item = getItem(id);
+    const color = item ? kindColor(item) : 0xffd54f;
+    // 畫面中央（root 在 (CX, 330)，畫面中心 y = 360）
+    const cx = 0,
+      cy = ARENA.height / 2 - 330;
+    return new Promise((resolve) => {
+      // 1) 旋轉放大飛到中央
+      s.tweens.add({
+        targets: card,
+        x: cx,
+        y: cy,
+        scale: 1.55,
+        angle: card.angle + 360,
+        alpha: 1,
+        duration: 560,
+        ease: 'Cubic.easeInOut',
+        onComplete: () => {
+          // 2) 發光：白光蓋上卡片＋外圈光暈
+          const glow = s.add.rectangle(0, 0, 268, 218, 0xffffff, 0).setStrokeStyle(10, color, 0);
+          card.add(glow);
+          const halo = s.add.ellipse(CX + cx, 330 + cy, 420, 340, color, 0.0).setDepth(60).setBlendMode(Phaser.BlendModes.ADD);
+          s.tweens.add({ targets: glow, fillAlpha: 0.95, duration: 170, ease: 'Quad.easeIn' });
+          s.tweens.add({ targets: halo, fillAlpha: 0.55, scale: 1.25, duration: 170, yoyo: true, onComplete: () => halo.destroy() });
+          s.tweens.add({ targets: card, scale: 1.7, duration: 170, ease: 'Quad.easeOut' });
+          // 3) 碎成粒子往外飛散
+          s.time.delayedCall(170, () => {
+            const ox = CX + cx,
+              oy = 330 + cy;
+            for (let i = 0; i < 46; i++) {
+              const px = ox + (Math.random() - 0.5) * 260 * 1.7,
+                py = oy + (Math.random() - 0.5) * 210 * 1.7;
+              const size = 4 + Math.random() * 9;
+              const p =
+                i % 3 === 0
+                  ? s.add.star(px, py, 4, size * 0.4, size, 0xffffff).setDepth(62)
+                  : s.add.rectangle(px, py, size, size, i % 2 ? color : 0xffe082).setDepth(62);
+              p.setBlendMode(Phaser.BlendModes.ADD).setAngle(Math.random() * 90);
+              const a = Math.atan2(py - oy, px - ox) + (Math.random() - 0.5) * 0.6;
+              const dist = 120 + Math.random() * 260;
+              s.tweens.add({
+                targets: p,
+                x: px + Math.cos(a) * dist,
+                y: py + Math.sin(a) * dist - 40,
+                angle: p.angle + (Math.random() - 0.5) * 540,
+                scale: 0.2,
+                alpha: 0,
+                duration: 520 + Math.random() * 380,
+                ease: 'Cubic.easeOut',
+                onComplete: () => p.destroy(),
+              });
+            }
+            s.tweens.add({ targets: card, alpha: 0, scale: 1.9, duration: 160, onComplete: () => {
+              this.hide();
+              resolve();
+            } });
+          });
+        },
+      });
+    });
+  }
+
   /** 選中的卡片放大、另一張淡出 */
   highlight(id: string): Promise<void> {
     return new Promise((resolve) => {
