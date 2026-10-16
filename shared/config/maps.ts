@@ -67,6 +67,20 @@ export const MAPS: MapDef[] = [
     centerX: 1190,
     bgColor: '#2870be',
   },
+  {
+    id: 'street',
+    name: '透天厝街道',
+    bg: 'assets/backgrounds/street.jpg',
+    ground: 'assets/backgrounds/ground_street.png',
+    groundTexel: 6,
+    // 機車大約跟人一樣高再矮一點、門比人高一截
+    worldPerTexel: 1.0,
+    scrollX: 0.45,
+    bottomOffset: -2,
+    photoCenter: 836,
+    centerX: 1300,
+    bgColor: '#3f8fd7',
+  },
 ];
 
 export function getMap(id: string | null | undefined): MapDef {
