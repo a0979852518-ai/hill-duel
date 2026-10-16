@@ -10,6 +10,7 @@
 import { ARENA } from '../../shared/config/game.js';
 import { getItem, type DefenseDef, type ItemDef, type ThrowableDef } from '../../shared/config/items.js';
 import { headLineY } from '../../shared/physics.js';
+import { itemScaleFor } from '../../shared/config/characters.js';
 import type { AiDifficulty, Seat } from '../../shared/types.js';
 import type { Battle } from './Battle.js';
 import { validatePlacement } from './DefenseSystem.js';
@@ -137,7 +138,8 @@ export class AiPlayer {
       foe = st.fighters[this.seat === 0 ? 1 : 0];
     const hitRate = this.difficulty === 'nightmare' ? 0.9 : this.difficulty === 'hard' ? 0.6 : 0.35;
     if (item.kind === 'throwable') {
-      let v = item.damage * hitRate;
+      // 角色技能加成（連恩的 Maya ×4、poopoo恩 ×3）
+      let v = item.damage * (st.traits(this.seat).ownItemMultiplier?.[item.id] ?? 1) * hitRate;
       const status = item.onHitStatus?.statusId;
       if (status === 'smoke') v += 3 * hitRate; // 之後每回合扣血
       if (status === 'stun') v += 6 * hitRate; // 對手跳過一回合
@@ -250,13 +252,13 @@ export class AiPlayer {
       for (let q = h.power - step; q > h.power - 0.08; q -= step) {
         const r = this.trial(item, h.angle, q);
         if (this.scoreTrial(r, foe, foeX) < thr) break;
-        if (r.y < headLineY()) headHits++;
+        if (r.y < this.headY()) headHits++;
         lo2 = q;
       }
       for (let q = h.power + step; q < h.power + 0.08 && q <= 1; q += step) {
         const r = this.trial(item, h.angle, q);
         if (this.scoreTrial(r, foe, foeX) < thr) break;
-        if (r.y < headLineY()) headHits++;
+        if (r.y < this.headY()) headHits++;
         hi2 = q;
       }
       // 夢魘：寬度一樣時偏好會打到頭的
@@ -269,15 +271,24 @@ export class AiPlayer {
     return best;
   }
 
+  /** 對手的頭部判定線（矮的角色比較低） */
+  private headY(): number {
+    const foe: Seat = this.seat === 0 ? 1 : 0;
+    return headLineY(this.battle.state.physics.getCharScale(foe));
+  }
+
   private trial(item: ThrowableDef, angle: number, power: number) {
     const w = this.battle.state.physics.clone();
-    const res = w.throwProjectile(this.seat, item, angle, power, () => ({ remove: [] }), { stopAtImpact: true });
+    // 連恩的 poopoo恩比較大：試算也要用一樣的大小
+    const s = itemScaleFor(this.battle.state.characterIds[this.seat], item.id);
+    const it = s === 1 ? item : { ...item, radius: item.radius * s };
+    const res = w.throwProjectile(this.seat, it, angle, power, () => ({ remove: [] }), { stopAtImpact: true });
     return res.impact;
   }
 
   private scoreTrial(r: { kind: string; x: number; y: number; hitSeat?: Seat; bounces?: number }, foe: Seat, foeX: number): number {
     if (r.kind === 'character' && r.hitSeat === foe) {
-      const head = r.y < headLineY();
+      const head = r.y < this.headY();
       const bounce = Math.pow(0.5, r.bounces ?? 0);
       return 1000 * bounce + (head ? (this.profile.aimHead ? 500 : 50) : 0);
     }
@@ -296,7 +307,7 @@ export class AiPlayer {
     const dir = this.seat === 0 ? 1 : -1;
     const G = ARENA.groundY;
     const cands: [number, number][] = [];
-    if (def.wearable) cands.push([x0, G - 150 - def.size.h / 2 - 8]); // 鋼盔戴頭上
+    if (def.wearable) cands.push([x0, G - 150 * st.physics.getCharScale(this.seat) - def.size.h / 2 - 8]); // 鋼盔戴頭上
     // 擋在自己前面（往對手方向），太近被打倒會壓到自己，所以放遠一點
     const near = this.profile.smart >= 0.85 ? [170, 210, 250, 140, 290] : [120 + Math.random() * 200, 160, 220, 260];
     for (const dx of near) cands.push([x0 + dir * dx, G - def.size.h / 2 - 2]);

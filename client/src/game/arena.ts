@@ -21,6 +21,8 @@ export const GROUND_KEY = 'bg:groundPixel';
 /** 像素風地磚（1 texel = 世界 8px，左右可無縫重複） */
 export const GROUND_PATH = 'assets/backgrounds/ground_pixel.png';
 const GROUND_TEXEL = 8;
+/** 地面往世界兩側延伸多遠 */
+const GROUND_EXTRA = 9000;
 
 export function queueBackground(scene: Phaser.Scene): void {
   scene.load.image(BACKGROUND_KEY, BACKGROUND_PATH);
@@ -153,7 +155,8 @@ export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
     scene.textures.get(GROUND_KEY).setFilter(Phaser.Textures.FilterMode.NEAREST);
     root.add(
       scene.add
-        .tileSprite(left, G - 4, span / GROUND_TEXEL, (BOTTOM - G + 4) / GROUND_TEXEL, GROUND_KEY)
+        // 沒有地圖邊界：地面往兩邊鋪很遠（tileSprite 重複貼，不佔額外記憶體）
+        .tileSprite(-GROUND_EXTRA, G - 4, (W + GROUND_EXTRA * 2) / GROUND_TEXEL, (BOTTOM - G + 4) / GROUND_TEXEL, GROUND_KEY)
         .setOrigin(0, 0)
         .setScale(GROUND_TEXEL),
     );

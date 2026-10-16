@@ -10,7 +10,7 @@
 import * as Phaser from 'phaser';
 import { AIM_CONFIG, ARENA, CAMERA } from '../../../shared/config/game.js';
 import { getItem, type DefenseDef } from '../../../shared/config/items.js';
-import { getCharacter, scaledDefenseSize } from '../../../shared/config/characters.js';
+import { bodyScaleOf, getCharacter, scaledDefenseSize } from '../../../shared/config/characters.js';
 import { characterHitbox, defenseRect, launchPoint } from '../../../shared/physics.js';
 import {
   ERROR_TEXT,
@@ -408,6 +408,7 @@ export class BattleScene extends Phaser.Scene {
             damageNumber(this, this.xOf(d.seat), d.amount, '#' + (st?.color ?? 0xb2ff59).toString(16).padStart(6, '0'), st?.name.replace(/（.*）/, '') ?? '狀態');
             this.hitCharacter(d.seat);
             this.hud.setHp(d.seat, d.hpAfter);
+            if (d.survived) floatingText(this, this.xOf(d.seat), ARENA.groundY - 260, '鎖血！剩 1 血', '#ffeb3b');
           }
           for (const h of e.heals ?? []) {
             damageNumber(this, this.xOf(h.seat), h.amount, '#69f0ae', '便便回血', '+');
@@ -518,7 +519,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean }[]): void {
+  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean; survived?: boolean }[]): void {
     for (const d of damages) {
       if (d.source === 'crush') {
         sfx.play('crush');
@@ -546,6 +547,10 @@ export class BattleScene extends Phaser.Scene {
         '-',
         d.source === 'direct',
       );
+      if (d.survived) {
+        floatingText(this, this.xOf(d.seat), ARENA.groundY - 260, '鎖血！剩 1 血', '#ffeb3b');
+        this.cameras.main.flash(180, 255, 235, 59);
+      }
       if (d.crit) {
         sfx.play('headshot');
         this.cameras.main.flash(120, 255, 160, 0);
@@ -558,7 +563,7 @@ export class BattleScene extends Phaser.Scene {
 
   private showStatusApplied(st: { seat: Seat; statusId: string; turns: number; immune?: boolean }): void {
     const def = getStatus(st.statusId);
-    const box = characterHitbox(this.xOf(st.seat));
+    const box = characterHitbox(this.xOf(st.seat), this.scaleOf(st.seat));
     if (st.immune) {
       floatingText(this, box.x + box.w / 2, box.y - 95, `免疫${def?.name.replace(/（.*）/, '') ?? ''}！`, '#ffffff');
       return;
@@ -705,7 +710,7 @@ export class BattleScene extends Phaser.Scene {
     this.aim.hide();
     const item = getItem(e.itemId);
     const key = this.textures.exists(projKey(e.itemId)) ? projKey(e.itemId) : iconKey(e.itemId);
-    const lp = launchPoint(e.seat, this.xOf(e.seat));
+    const lp = launchPoint(e.seat, this.xOf(e.seat), this.scaleOf(e.seat));
     const start = e.frames.p?.[0] ?? [lp.x, lp.y, 0];
     this.focusSeat(e.seat, 5);
     this.chars[e.seat]?.flash('throw', 450);
@@ -714,7 +719,8 @@ export class BattleScene extends Phaser.Scene {
     // 出手的咻聲：重的東西比較低沉，越大力越大聲
     const kg = item?.kind === 'throwable' ? item.weightKg ?? 0.5 : 0.5;
     sfx.play(kg >= 0.5 ? 'throwHeavy' : 'throwLight', { vol: 0.5 + e.power * 0.6, rate: kg >= 1 ? 0.85 : 1 });
-    fitInto(proj, item?.kind === 'throwable' ? Math.max(32, item.radius * 3.4) : 32);
+    // 連恩的 poopoo恩 2.5 倍大
+    fitInto(proj, (item?.kind === 'throwable' ? Math.max(32, item.radius * 3.4) : 32) * (e.projScale ?? 1));
     if (!this.textures.exists('fx:dot')) {
       const g = this.make.graphics({}, false);
       g.fillStyle(0xffffff, 1).fillCircle(3, 3, 2.4);
@@ -746,6 +752,17 @@ export class BattleScene extends Phaser.Scene {
         // 被倒下的防禦道具壓到
         const crush = e.damages.filter((d) => d.frame === k);
         if (crush.length) this.applyDamages(crush);
+        // 獸控倒下壓到葉柄承：回血、獸控消失
+        for (const h of e.crushHeals?.filter((x) => x.frame === k) ?? []) {
+          damageNumber(this, this.xOf(h.seat), h.amount, '#69f0ae', '獸控療癒', '+');
+          this.hud.setHp(h.seat, h.hpAfter);
+          sfx.play('use_porkChop');
+          const ds = this.defenses.get(h.uid);
+          if (ds) {
+            puff(this, ds.root.x, ds.root.y);
+            this.removeDefense(h.uid, ds, 'fade');
+          }
+        }
         // 命中後鏡頭跟著被打飛的人
         if (!flying && knocked && k > e.impactFrame + 4) {
           const f = knocked[1]![Math.min(k, knocked[1]!.length - 1)];
@@ -808,7 +825,7 @@ export class BattleScene extends Phaser.Scene {
     if (e.statusApplied) this.showStatusApplied(e.statusApplied);
     // 被打壞的防禦道具：變灰、繼續倒，等全部靜止才碎掉
     for (const u of e.defenseUpdates) {
-      if (!u.destroyed || u.reason === 'fell') continue;
+      if (!u.destroyed || u.reason === 'fell' || u.reason === 'removed') continue;
       const ds = this.defenses.get(u.uid);
       if (!ds) continue;
       floatingText(this, ds.root.x, ds.root.y - ds.view.h / 2 - 20, '擊垮！', '#ffcc80');
@@ -972,7 +989,7 @@ export class BattleScene extends Phaser.Scene {
         this.localPower = Math.min(AIM_CONFIG.maxPower, AIM_CONFIG.minPower + elapsed / AIM_CONFIG.chargeSeconds);
         sfx.charge(this.localPower);
       }
-      this.aim.draw(t.activeSeat, this.xOf(t.activeSeat), this.localAngle, this.charging ? this.localPower : null);
+      this.aim.draw(t.activeSeat, this.xOf(t.activeSeat), this.localAngle, this.charging ? this.localPower : null, this.scaleOf(t.activeSeat));
       // 把瞄準狀態即時分享給對手（每秒 10 次）
       if (time - this.lastPreviewSent > 100) {
         this.lastPreviewSent = time;
@@ -983,7 +1000,7 @@ export class BattleScene extends Phaser.Scene {
         });
       }
     } else {
-      this.aim.draw(t.activeSeat, this.xOf(t.activeSeat), this.previewAngle, this.previewPower);
+      this.aim.draw(t.activeSeat, this.xOf(t.activeSeat), this.previewAngle, this.previewPower, this.scaleOf(t.activeSeat));
     }
   }
 
@@ -1027,7 +1044,7 @@ export class BattleScene extends Phaser.Scene {
   private aimAt(x: number, y: number): void {
     const seat = store.mySeat;
     if (seat === null) return;
-    const lp = launchPoint(seat, this.xOf(seat));
+    const lp = launchPoint(seat, this.xOf(seat), this.scaleOf(seat));
     const dir = seat === 0 ? 1 : -1;
     const dx = (x - lp.x) * dir,
       dy = lp.y - y;
@@ -1135,6 +1152,11 @@ export class BattleScene extends Phaser.Scene {
     skill.addEventListener('click', () => this.toggleSkills());
     app.appendChild(skill);
     this.skillBtn = skill;
+  }
+
+  /** 角色身體大小倍率（連恩 2/3） */
+  private scaleOf(seat: Seat): number {
+    return bodyScaleOf(store.snapshot?.players[seat]?.characterId);
   }
 
   /** 顯示 / 關閉自己角色的技能說明（按 Q 或左下角按鈕） */

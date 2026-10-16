@@ -112,7 +112,7 @@ export class CharacterSprite {
   addStuck(item: StuckItem, animate = true): void {
     const img = this.scene.add.image(0, 0, iconKey(item.itemId));
     const src = img.frame;
-    const s = STUCK_SIZE / Math.max(src.width, src.height);
+    const s = (STUCK_SIZE * (item.scale ?? 1)) / Math.max(src.width, src.height);
     img.setScale(s);
     this.stuckLayer.add(img);
     this.stuck.push({ item, img });

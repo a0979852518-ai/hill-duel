@@ -132,8 +132,12 @@ export class PhysicsWorld {
   /** 角色腳底 x */
   private charX: [number, number];
 
-  constructor(startX: [number, number] = [ARENA.characterStartX[0], ARENA.characterStartX[1]]) {
+  /** 角色身體大小倍率（連恩 2/3） */
+  private readonly cs: [number, number];
+
+  constructor(startX: [number, number] = [ARENA.characterStartX[0], ARENA.characterStartX[1]], charScale: [number, number] = [1, 1]) {
     this.charX = [...startX] as [number, number];
+    this.cs = [...charScale] as [number, number];
     this.engine = Engine.create({
       gravity: { x: 0, y: 1, scale: ARENA.gravity / 1e6 },
       enableSleeping: true,
@@ -149,7 +153,8 @@ export class PhysicsWorld {
       collisionFilter: { category: CAT.world, mask: 0xffff },
     };
     const statics: any[] = [
-      Bodies.rectangle(W / 2, G + 100, W + 800, 200, { ...worldOpts, label: 'ground' }),
+      // 地面往兩邊延伸很遠：沒有地圖邊界，東西不會掉下去
+      Bodies.rectangle(W / 2, G + 100, 60000, 200, { ...worldOpts, label: 'ground' }),
       // 隱形邊界：只擋翻滾中的角色（投擲物、道具都會穿過去）
       ...[ARENA.characterXRange[0][0] - 220, ARENA.characterXRange[1][1] + 220].map((bx) =>
         Bodies.rectangle(bx, G - 1500, 40, 3000, { isStatic: true, label: 'bound', friction: 0.1, restitution: 0, collisionFilter: { category: CAT.bound, mask: CAT.tumble } }),
@@ -158,8 +163,9 @@ export class PhysicsWorld {
     for (const seat of [0, 1] as Seat[]) {
       const x = this.charX[seat];
       const cb = ARENA.characterBody;
-      const torso = Bodies.rectangle(x, G - cb.torsoH / 2, cb.torsoW, cb.torsoH, { label: `char${seat}` });
-      const head = Bodies.circle(x, G + cb.headY, cb.headR, { label: `char${seat}` });
+      const s = this.cs[seat];
+      const torso = Bodies.rectangle(x, G - (cb.torsoH * s) / 2, cb.torsoW * s, cb.torsoH * s, { label: `char${seat}` });
+      const head = Bodies.circle(x, G + cb.headY * s, cb.headR * s, { label: `char${seat}` });
       const body = Body.create({
         parts: [torso, head],
         isStatic: true,
@@ -178,7 +184,7 @@ export class PhysicsWorld {
    * 給 AI 試算投擲用，不會影響真正的戰場。
    */
   clone(): PhysicsWorld {
-    const w = new PhysicsWorld([this.charX[0], this.charX[1]]);
+    const w = new PhysicsWorld([this.charX[0], this.charX[1]], this.cs);
     for (const [uid, info] of this.defs) {
       w.addDefense(uid, info.def, info.owner, info.body.position.x + info.offset.x, info.body.position.y + info.offset.y);
       const nb = w.defs.get(uid)!.body;
@@ -187,6 +193,10 @@ export class PhysicsWorld {
       Sleeping.set(nb, true);
     }
     return w;
+  }
+
+  getCharScale(seat: Seat): number {
+    return this.cs[seat];
   }
 
   getCharX(seat: Seat): number {
@@ -289,7 +299,8 @@ export class PhysicsWorld {
     const worn: KnockState['worn'] = [];
     for (const info of this.defs.values()) {
       const p = info.body.position;
-      if (info.wearable && Math.abs(p.x - x) < 55 && p.y < G - 105 && p.y > G - 240) {
+      const s = this.cs[seat];
+      if (info.wearable && Math.abs(p.x - x) < 55 * s && p.y < G - 105 * s && p.y > G - 240 * s) {
         worn.push({ body: info.body, rx: p.x - x, ry: p.y - G, a0: info.body.angle });
         Composite.remove(this.engine.world, info.body);
       }
@@ -298,13 +309,14 @@ export class PhysicsWorld {
     // 戴在頭上/靠在身上的東西跟著被打飛
     for (const info of this.defs.values()) {
       const p = info.body.position;
-      if (!info.wearable && Math.abs(p.x - x) < 70 && p.y < G - 20 && p.y > G - 260) {
+      if (!info.wearable && Math.abs(p.x - x) < 70 && p.y < G - 20 && p.y > G - 260 * this.cs[seat]) {
         Body.setVelocity(info.body, { x: (req.vx * 0.7) / 60, y: (req.vy * 0.6 - 180) / 60 });
         Body.setAngularVelocity(info.body, (req.omega * 0.8 + (req.vx > 0 ? 3 : -3)) / 60);
       }
     }
-    const body = Bodies.rectangle(x, G - TUMBLE.h / 2 - 0.5, TUMBLE.w, TUMBLE.h, {
-      chamfer: { radius: TUMBLE.r },
+    const ts = this.tumbleSize(seat);
+    const body = Bodies.rectangle(x, G - ts.h / 2 - 0.5, ts.w, ts.h, {
+      chamfer: { radius: ts.r },
       label: `tumble${seat}`,
       friction: KNOCKBACK.friction,
       frictionStatic: KNOCKBACK.friction * 1.3,
@@ -324,7 +336,7 @@ export class PhysicsWorld {
       restSteps: 0,
       away: seat === 0 ? -1 : 1,
       speed: req.speed,
-      com: { x, y: G - TUMBLE.h / 2 },
+      com: { x, y: G - ts.h / 2 },
       angle0: 0,
       lieAngle: 0,
       halfRolls: 0,
@@ -340,6 +352,12 @@ export class PhysicsWorld {
     frames.c ??= {};
     frames.c[String(seat) as '0' | '1'] = k.frames;
     return k;
+  }
+
+  /** 翻滾身體大小（矮的角色比較小） */
+  private tumbleSize(seat: Seat): { w: number; h: number; r: number } {
+    const s = this.cs[seat];
+    return { w: TUMBLE.w * s, h: TUMBLE.h * s, r: TUMBLE.r * s };
   }
 
   /** 由身體中心、角度換算成 [腳底x, 腳底y-地面, 角度, 翻面] */
@@ -405,7 +423,8 @@ export class PhysicsWorld {
       const slow = b.speed < 0.08 && Math.abs(b.angularVelocity) < 0.004;
       k.restSteps = slow || b.isSleeping ? k.restSteps + 1 : 0;
       // 身體最低點離地多高（直立時是腳、躺著時是背）
-      const lowest = b.position.y + Math.abs(Math.cos(b.angle)) * (TUMBLE.h / 2) + Math.abs(Math.sin(b.angle)) * (TUMBLE.w / 2);
+      const ts = this.tumbleSize(k.seat);
+      const lowest = b.position.y + Math.abs(Math.cos(b.angle)) * (ts.h / 2) + Math.abs(Math.sin(b.angle)) * (ts.w / 2);
       if (lowest < ARENA.groundY - 10) k.airborne = true;
       const landed = k.airborne && lowest >= ARENA.groundY - 4 && b.velocity.y >= -0.5;
       // 落地那一刻就接著在地上滾（不要先在地上慢慢滑到停才開始滾）；
@@ -482,7 +501,7 @@ export class PhysicsWorld {
 
   private knockPose(k: KnockState): Pose5 {
     const G = ARENA.groundY;
-    if (k.phase === 'tumble') return this.poseFromCom(k.body.position.x, k.body.position.y, k.body.angle, 1, k.t < 0.12 ? 1 : 2);
+    if (k.phase === 'tumble') return this.poseFromCom(k.body.position.x, k.body.position.y, k.body.angle, 1, k.t < 0.12 ? 1 : 2, this.tumbleSize(k.seat).h / 2);
     if (k.phase === 'roll') {
       // 縮成一團在地上往後滾（圖 3、4 交替，整團跟著轉），每滾半圈彈一下
       const ms = k.t * 1000;
@@ -497,7 +516,7 @@ export class PhysicsWorld {
         left -= d;
       }
       const frame = Math.floor(progress) % 2 === 0 ? 3 : 4;
-      const half = (KNOCK_FRAMES[frame].h * STAND_H) / 2;
+      const half = (KNOCK_FRAMES[frame].h * STAND_H * this.cs[k.seat]) / 2;
       const cx = k.com.x + k.away * progress * this.rollStep();
       const cy = G - half - hop;
       const a = k.away * Math.PI * progress;
@@ -517,8 +536,8 @@ export class PhysicsWorld {
     const frame = p[4];
     if (frame < 3) return null; // 站著/往後倒時用一般的頭部位置
     const f = KNOCK_FRAMES[frame];
-    const w = f.w * STAND_H,
-      h = f.h * STAND_H;
+    const w = f.w * STAND_H * this.cs[k.seat],
+      h = f.h * STAND_H * this.cs[k.seat];
     // 圖是「往左被打飛」的方向，往右時鏡像
     const hx = k.away < 0 ? f.hx : 1 - f.hx;
     const lx = (hx - 0.5) * w,
@@ -584,7 +603,8 @@ export class PhysicsWorld {
   private removeFallen(frames: PhysicsFrames): string[] {
     const out: string[] = [];
     for (const [uid, info] of this.defs) {
-      if (info.body.position.y > PHYSICS.killY || info.body.position.x < -200 || info.body.position.x > ARENA.world.width + 200) out.push(uid);
+      // 沒有地圖邊界：只有真的掉到地底下（理論上不會）才移除
+      if (info.body.position.y > PHYSICS.killY) out.push(uid);
     }
     for (const uid of out) {
       frames.gone[uid] = frames.count;
@@ -654,7 +674,7 @@ export class PhysicsWorld {
       for (const s of [0, 1] as Seat[]) {
         const p = info.body.position;
         // 穿戴型道具（鋼盔）永遠不算壓到人
-        if (info.wearable || (Math.abs(p.x - this.charX[s]) < 60 && p.y < G - 60)) wornBy[s].add(uid);
+        if (info.wearable || (Math.abs(p.x - this.charX[s]) < 60 && p.y < G - 60 * this.cs[s])) wornBy[s].add(uid);
       }
     }
     const crushes: { seat: Seat; uid: string; frame: number }[] = [];
@@ -663,7 +683,7 @@ export class PhysicsWorld {
     const crushed = new Set<string>();
     const last = this.snapshotPoses();
     const dir = seat === 0 ? 1 : -1;
-    const lp = launchPoint(seat, this.charX[seat]);
+    const lp = launchPoint(seat, this.charX[seat], this.cs[seat]);
     const p = Math.min(1, Math.max(0, power));
     const speed = item.minSpeed + (item.maxSpeed - item.minSpeed) * p; // px/s
     const rad = (angleDeg * Math.PI) / 180;
@@ -708,7 +728,7 @@ export class PhysicsWorld {
           const sp = Math.hypot(pvx, pvy);
           const tilted = Math.abs(defB.angle - (startAngle.get(uid) ?? defB.angle)) > 0.2 || pvy > 60;
           const key = `${uid}:${s}`;
-          if (!crushed.has(key) && !wornBy[s].has(uid) && tilted && sp >= DEFENSE_HIT.crushSpeed && contact.y < G - 50) {
+          if (!crushed.has(key) && !wornBy[s].has(uid) && tilted && sp >= DEFENSE_HIT.crushSpeed && contact.y < G - 50 * this.cs[s]) {
             crushed.add(key);
             crushes.push({ seat: s, uid, frame: frames.count });
           }

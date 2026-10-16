@@ -114,6 +114,8 @@ export interface DefenseDef extends ItemBase {
   maxPerPlayer?: number;
   /** 還在場上時，放置者造成的傷害倍率（獸控 ×2） */
   ownerOutgoingMultiplier?: number;
+  /** 倒下壓到放置者時改成回血這麼多，而且道具消失（獸控） */
+  crushHealsOwner?: number;
 }
 
 export interface FunctionalDef extends ItemBase {
@@ -438,6 +440,8 @@ export const ITEMS: ItemDef[] = [
     icon: 'assets/items/hospital.png',
     placeholder: { shape: 'rect', color: 0x3f51b5 },
     exclusiveTo: ['yebingcheng'],
+    // 抽到的機率比一般道具高一點
+    weight: 1.5,
     weightKg: 80,
     handler: 'heal',
     targeting: 'none',
@@ -447,12 +451,15 @@ export const ITEMS: ItemDef[] = [
     id: 'beastFan',
     kind: 'defense',
     name: '獸控',
-    description: '葉柄承專屬。放出來當掩體，可以擋下 2 次投擲攻擊；它還在場上時，你造成的傷害 ×2。',
+    description: '葉柄承專屬。跟人一樣高的掩體，可以擋下 2 次投擲攻擊；它還在場上時，你造成的傷害 ×2；倒下壓到你會回復 30 血（獸控消失）。',
     icon: 'assets/items/beastfan.png',
     sprite: 'assets/items/beastfan.png',
     placeholder: { shape: 'rect', color: 0x2e7d32 },
     exclusiveTo: ['yebingcheng'],
-    size: { w: 70, h: 100 },
+    // 跟角色一樣高（150）
+    size: { w: 105, h: 150 },
+    weight: 1.5,
+    crushHealsOwner: 30,
     weightKg: 0.3,
     density: 0.0015,
     friction: 0.5,

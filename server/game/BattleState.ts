@@ -2,7 +2,7 @@
 // 傷害、防禦耐久、狀態全部只在這裡改，避免各模組各算各的。
 
 import { ARENA } from '../../shared/config/game.js';
-import { traitsOf, type CharacterTraits } from '../../shared/config/characters.js';
+import { bodyScaleOf, traitsOf, type CharacterTraits } from '../../shared/config/characters.js';
 import { getItem, getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
 import type { DamageEntry, DefenseUpdate, DefenseView, HealEntry, Seat, StatusView, StuckItem } from '../../shared/types.js';
 import { PhysicsWorld } from './PhysicsWorld.js';
@@ -16,6 +16,8 @@ export interface FighterState {
   x: number;
   /** 黏在身上的便便（純裝飾） */
   stuck: StuckItem[];
+  /** 鎖血技能已經用掉了 */
+  survivedOnce?: boolean;
 }
 
 export interface DefenseState extends DefenseView {
@@ -27,7 +29,7 @@ export class BattleState {
   fighters: [FighterState, FighterState];
   defenses: DefenseState[] = [];
   /** 防禦道具的真實物理（位置、角度、堆疊） */
-  readonly physics = new PhysicsWorld();
+  readonly physics: PhysicsWorld;
   private uidCounter = 0;
 
   /** 雙方的角色 id（決定被動技能） */
@@ -35,6 +37,7 @@ export class BattleState {
 
   constructor(maxHp: [number, number], characterIds: [string | null, string | null] = [null, null]) {
     this.characterIds = characterIds;
+    this.physics = new PhysicsWorld(undefined, [bodyScaleOf(characterIds[0]), bodyScaleOf(characterIds[1])]);
     this.fighters = [
       { seat: 0, hp: maxHp[0], maxHp: maxHp[0], statuses: [], x: ARENA.characterStartX[0], stuck: [] },
       { seat: 1, hp: maxHp[1], maxHp: maxHp[1], statuses: [], x: ARENA.characterStartX[1], stuck: [] },
@@ -65,7 +68,14 @@ export class BattleState {
   private multiplier(seat: Seat, key: 'incomingMultiplier' | 'outgoingMultiplier'): number {
     let m = 1;
     // 可累加的狀態：每一層都再乘一次（例如 1.2 疊 3 層 = 1.2³）
-    for (const s of this.fighters[seat].statuses) m *= Math.pow(getStatus(s.statusId)?.[key] ?? 1, s.stacks ?? 1);
+    const strength = this.traits(seat).statusStrengthMultiplier ?? {};
+    for (const s of this.fighters[seat].statuses) {
+      let v = getStatus(s.statusId)?.[key] ?? 1;
+      // 鄭霖澤：負面效果加倍（精神傷害 ×1.2 → ×1.4）
+      const k = strength[s.statusId];
+      if (k) v = 1 + (v - 1) * k;
+      m *= Math.pow(v, s.stacks ?? 1);
+    }
     return m;
   }
 
@@ -79,28 +89,45 @@ export class BattleState {
     // 角色弱點/抗性：被特定道具打、特定狀態的持續傷害
     if (itemId) raw *= t.incomingByItem?.[itemId] ?? 1;
     if (statusId) raw *= t.statusDamageMultiplier?.[statusId] ?? 1;
-    if (attacker !== undefined) raw *= this.multiplier(attacker, 'outgoingMultiplier') * (this.traits(attacker).outgoingMultiplier ?? 1) * this.defenseBoost(attacker);
+    if (attacker !== undefined) {
+      const ta = this.traits(attacker);
+      // 角色基本傷害倍率（連恩對鄭霖澤改用另一個倍率）
+      const vs = ta.outgoingVsChar?.[this.characterIds[seat] ?? ''];
+      raw *= this.multiplier(attacker, 'outgoingMultiplier') * (vs ?? ta.outgoingMultiplier ?? 1) * this.defenseBoost(attacker);
+      // 自己用某些道具特別痛（連恩的 Maya、poopoo恩）
+      if (itemId) raw *= ta.ownItemMultiplier?.[itemId] ?? 1;
+      // 被特定角色打（鄭霖澤打連恩 ×0.5）
+      raw *= t.incomingFromChar?.[this.characterIds[attacker] ?? ''] ?? 1;
+    }
     const dmg = Math.max(0, Math.round(raw));
     if (dmg <= 0) return null;
     const f = this.fighters[seat];
     f.hp = Math.max(0, f.hp - dmg);
-    return { seat, amount: dmg, hpAfter: f.hp, source, ...(statusId ? { statusId } : {}) };
+    // 葉柄承：第一次歸零鎖血在 1
+    let survived = false;
+    if (f.hp <= 0 && t.surviveOnce && !f.survivedOnce) {
+      f.hp = 1;
+      f.survivedOnce = true;
+      survived = true;
+    }
+    return { seat, amount: dmg, hpAfter: f.hp, source, ...(statusId ? { statusId } : {}), ...(survived ? { survived } : {}) };
   }
 
   /**
    * 黏一坨在身上：impactX/Y 是世界座標的命中點，feetX 是被打中當下的腳底位置。
    * 跟已經黏著的便便重疊 → 黏在那坨上面（往外疊出去）。
    */
-  stick(seat: Seat, itemId: string, impactX: number, impactY: number, feetX: number): StuckItem {
+  stick(seat: Seat, itemId: string, impactX: number, impactY: number, feetX: number, scale = 1): StuckItem {
     const facing = seat === 0 ? 1 : -1;
-    const R = 12; // 黏著時的半徑（畫面上約 28px 大）
-    let x = Math.max(-22, Math.min(22, (impactX - feetX) * facing));
-    let y = Math.max(8, Math.min(ARENA.characterHitbox.h + 6, ARENA.groundY - impactY));
+    const bs = this.physics.getCharScale(seat);
+    const R = 12 * scale; // 黏著時的半徑（畫面上約 28px 大；連恩丟的大 2.5 倍）
+    let x = Math.max(-22 * bs, Math.min(22 * bs, (impactX - feetX) * facing));
+    let y = Math.max(8, Math.min(ARENA.characterHitbox.h * bs + 6, ARENA.groundY - impactY));
     let rot = (Math.random() - 0.5) * 0.8;
     const list = this.fighters[seat].stuck;
     // 疊起來：一直往外推，直到不跟任何一坨重疊
     for (let guard = 0; guard < 12; guard++) {
-      const hit = list.find((s) => Math.hypot(s.x - x, s.y - y) < R * 1.7);
+      const hit = list.find((s) => Math.hypot(s.x - x, s.y - y) < (R + 12 * (s.scale ?? 1)) * 0.85);
       if (!hit) break;
       let dx = x - hit.x,
         dy = y - hit.y;
@@ -111,11 +138,12 @@ export class BattleState {
         dy = 0.6;
       }
       const l2 = Math.hypot(dx, dy);
-      x = hit.x + (dx / l2) * R * 1.75;
-      y = hit.y + (dy / l2) * R * 1.75;
+      const gap = (R + 12 * (hit.scale ?? 1)) * 0.875;
+      x = hit.x + (dx / l2) * gap;
+      y = hit.y + (dy / l2) * gap;
       rot = Math.atan2(dx / l2, dy / l2) * 0.6; // 往外歪
     }
-    const item: StuckItem = { itemId, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, rot: Math.round(rot * 100) / 100 };
+    const item: StuckItem = { itemId, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, rot: Math.round(rot * 100) / 100, ...(scale !== 1 ? { scale } : {}) };
     list.push(item);
     return item;
   }
@@ -137,10 +165,13 @@ export class BattleState {
     return this.fighters[seat].statuses.reduce((n, s) => n + (getStatus(s.statusId)?.hideDrawOptions ?? 0), 0);
   }
 
-  /** 附加狀態；回傳 false = 沒附加上（角色免疫） */
-  applyStatus(seat: Seat, statusId: string, turns: number): boolean {
-    if (!getStatus(statusId)) return false;
-    if (this.traits(seat).immuneStatuses?.includes(statusId)) return false;
+  /** 附加狀態；回傳實際附加的回合數，0 = 沒附加上（角色免疫） */
+  applyStatus(seat: Seat, statusId: string, turns: number): number {
+    if (!getStatus(statusId)) return 0;
+    if (this.traits(seat).immuneStatuses?.includes(statusId)) return 0;
+    // 鄭霖澤：有回合數的負面效果持續兩倍久
+    const dur = this.traits(seat).statusDurationMultiplier?.[statusId];
+    if (dur && turns < PERMANENT_TURNS) turns = Math.round(turns * dur);
     const f = this.fighters[seat];
     const def = getStatus(statusId)!;
     const existing = f.statuses.find((s) => s.statusId === statusId);
@@ -149,7 +180,7 @@ export class BattleState {
       if (def.stackable) existing.stacks = (existing.stacks ?? 1) + 1;
       existing.remainingTurns = Math.max(existing.remainingTurns, turns);
     } else f.statuses.push(def.stackable ? { statusId, remainingTurns: turns, stacks: 1 } : { statusId, remainingTurns: turns });
-    return true;
+    return turns;
   }
 
   /**
@@ -196,6 +227,12 @@ export class BattleState {
     return this.defenses.find((d) => d.uid === uid);
   }
 
+  /** 剛被打壞（資料已移除、物理上還在倒）的防禦道具：誰的、什麼道具 */
+  private broken = new Map<string, { owner: Seat; itemId: string }>();
+  wasDefense(uid: string): { owner: Seat; itemId: string } | undefined {
+    return this.broken.get(uid);
+  }
+
   /** 防禦道具被攻擊一次 */
   hitDefense(uid: string, structureDamage: number): DefenseUpdate | null {
     const d = this.getDefense(uid);
@@ -205,7 +242,10 @@ export class BattleState {
     const destroyed =
       (d.durability !== null && d.durability <= 0) || (d.maxHits !== null && d.hits >= d.maxHits);
     // 被打壞：先從資料中移除（不能再擋），物理上的身體由投擲模擬讓它倒完、靜止後才移除
-    if (destroyed) this.defenses = this.defenses.filter((x) => x.uid !== uid);
+    if (destroyed) {
+      this.defenses = this.defenses.filter((x) => x.uid !== uid);
+      this.broken.set(uid, { owner: d.owner, itemId: d.itemId });
+    }
     return { uid, durability: d.durability, hits: d.hits, destroyed, reason: destroyed ? 'hit' : undefined };
   }
 

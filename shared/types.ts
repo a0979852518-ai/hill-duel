@@ -60,6 +60,8 @@ export interface StuckItem {
   x: number;
   y: number;
   rot: number;
+  /** 大小倍率（連恩丟的 poopoo恩 2.5 倍） */
+  scale?: number;
 }
 
 /** 電腦玩家難度：弱 / 中 / 強 / 夢魘 */
@@ -147,6 +149,8 @@ export interface DamageEntry {
   bounces?: number;
   /** 角色技能的爆擊（捲毛的快煮鍋） */
   crit?: boolean;
+  /** 觸發鎖血（葉柄承：第一次歸零固定在 1 血） */
+  survived?: boolean;
 }
 
 export interface HealEntry {
@@ -188,6 +192,10 @@ export type BattleEvent =
       statusApplied: { seat: Seat; statusId: string; turns: number; immune?: boolean } | null;
       /** 投擲物落地彈跳的格數 */
       bounceFrames?: number[];
+      /** 投擲物大小倍率（連恩的 poopoo恩 2.5 倍） */
+      projScale?: number;
+      /** 防禦道具倒下壓到主人時改成回血（獸控），frame = 第幾格 */
+      crushHeals?: { seat: Seat; amount: number; hpAfter: number; frame: number; uid: string }[];
       /** 這次黏到誰身上（poopoo恩） */
       stuck?: { seat: Seat; item: StuckItem };
     }

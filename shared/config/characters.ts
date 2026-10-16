@@ -39,6 +39,20 @@ export interface CharacterTraits {
   defenseScale?: Record<string, number>;
   /** 身上黏著東西（poopoo恩）時，每回合開始回復幾血 */
   stuckRegen?: number;
+  /** 自己用這些道具造成的傷害倍率（連恩的 Maya ×4、poopoo恩 ×3） */
+  ownItemMultiplier?: Record<string, number>;
+  /** 對上特定角色時，取代 outgoingMultiplier 的傷害倍率（角色 id → 倍率） */
+  outgoingVsChar?: Record<string, number>;
+  /** 被特定角色打到時受到的傷害倍率（角色 id → 倍率） */
+  incomingFromChar?: Record<string, number>;
+  /** 負面狀態持續回合倍率（狀態 id → 倍率），永久狀態不適用 */
+  statusDurationMultiplier?: Record<string, number>;
+  /** 負面狀態強度倍率：效果 (倍率-1) 乘上這個數，例如精神傷害 ×1.2 → ×1.4 */
+  statusStrengthMultiplier?: Record<string, number>;
+  /** 自己丟出去的這些道具變大幾倍（碰撞範圍一起變大） */
+  ownItemScale?: Record<string, number>;
+  /** 第一次血量歸零時鎖血，固定在 1（一場只有一次） */
+  surviveOnce?: boolean;
 }
 
 export interface CharacterDef {
@@ -61,6 +75,8 @@ export interface CharacterDef {
   knockFrames?: string[];
   /** 站姿在畫面上的高度（像素），其他姿勢依比例換算；預設 150 */
   standHeight?: number;
+  /** 身體大小倍率（判定框、頭、出手點、翻滾的身體），預設 1；連恩 = 2/3 */
+  bodyScale?: number;
   /** 被動技能 */
   traits?: CharacterTraits;
   /** 技能說明（選角畫面、戰鬥中按 Q） */
@@ -95,12 +111,21 @@ export const CHARACTERS: CharacterDef[] = [
     name: '鄭霖澤',
     maxHp: 120,
     description: '沾屎回血的重砲坦克',
-    traits: { outgoingMultiplier: 1.2, incomingByItem: { mutualBomb: 1.5 }, statusDamageMultiplier: { smoke: 3 }, stuckRegen: 1 },
+    traits: {
+      outgoingMultiplier: 1.2,
+      incomingByItem: { mutualBomb: 1.5 },
+      statusDamageMultiplier: { smoke: 3 },
+      stuckRegen: 1,
+      // 負面效果兩倍（機車鎖除外）：有回合數的 → 回合數 ×2；永久疊加的絲襪 → 每層 ×1.4
+      statusDurationMultiplier: { blind: 2, disgust: 2, poison: 2 },
+      statusStrengthMultiplier: { mental: 2 },
+    },
     skills: [
       '初始血量 120',
       '造成的傷害 ×1.2',
       '弱點：老師的奶照對他的傷害 ×1.5',
       '弱點：大哥的香菸命中後的二手菸，每回合扣血 ×3',
+      '弱點：受到的負面效果兩倍（機車鎖除外）：冷氣卡、過期果汁持續回合 ×2；絲襪每層 ×1.4',
       '身上黏著 poopoo恩 時，每回合回復 1 血',
     ],
     portrait: 'assets/characters/zhenglinze/portrait.png',
@@ -118,12 +143,14 @@ export const CHARACTERS: CharacterDef[] = [
     name: '葉柄承',
     maxHp: 70,
     description: '常駐病房的獸控',
-    traits: { outgoingMultiplier: 0.8 },
+    traits: { outgoingMultiplier: 0.8, surviveOnce: true },
     skills: [
       '初始血量只有 70',
       '造成的傷害只有 0.8 倍',
       '專屬卡牌「住院」：回復 50 血',
-      '專屬卡牌「獸控」：特殊防禦道具，放出來當掩體擋 2 次攻擊；還在場上時造成的傷害 ×2（跟 0.8 倍相乘 = 1.6 倍）',
+      '專屬卡牌「獸控」：跟人一樣高的特殊防禦道具，擋 2 次攻擊；還在場上時造成的傷害 ×2（跟 0.8 倍相乘 = 1.6 倍）；倒下壓到葉柄承會回復 30 血，獸控消失',
+      '專屬卡牌比一般道具容易抽到一點',
+      '鎖血：第一次血量歸零時固定在 1 血（一場一次）',
     ],
     exclusiveItems: ['hospital', 'beastFan'],
     portrait: 'assets/characters/yebingcheng/portrait.png',
@@ -164,6 +191,31 @@ export const CHARACTERS: CharacterDef[] = [
     ],
     placeholder: { color: 0xffffff, accent: 0xf1d3b8 },
   },
+  {
+    id: 'lianen',
+    name: '連恩',
+    maxHp: 80,
+    description: '矮小的 Maya 剋星',
+    // 還沒有照片：先用程式畫的人形（矮 2/3）。有照片後照其他角色填 portrait / poses / knockFrames
+    standHeight: 100,
+    bodyScale: 2 / 3,
+    traits: {
+      outgoingMultiplier: 0.5,
+      outgoingVsChar: { zhenglinze: 2 },
+      ownItemMultiplier: { maya2026: 4, poopoo: 3 },
+      incomingFromChar: { zhenglinze: 0.5 },
+      ownItemScale: { poopoo: 2.5 },
+    },
+    skills: [
+      '人物矮小：身高只有一般角色的 2/3（比較難打中）',
+      '初始血量 80，造成的傷害只有 0.5 倍',
+      '對手是鄭霖澤時，傷害倍率改為 2 倍（取代 0.5 倍）',
+      '鄭霖澤打中她的傷害只有 0.5 倍',
+      '自己丟的 Maya 2026 傷害 ×4',
+      '自己丟的 poopoo恩 傷害 ×3，而且是一般的 2.5 倍大',
+    ],
+    placeholder: { color: 0xf48fb1, accent: 0xf1d3b8 },
+  },
 
   // ---- 以下是最早的臨時角色（沒有照片），先關閉；改成 enabled: true 就會回到選角畫面 ----
   {
@@ -188,6 +240,15 @@ export const PLAYABLE_CHARACTERS = CHARACTERS.filter((c) => c.enabled !== false)
 
 export function getCharacter(id: string): CharacterDef | undefined {
   return CHARACTERS.find((c) => c.id === id);
+}
+
+export function bodyScaleOf(id: string | null | undefined): number {
+  return (id && getCharacter(id)?.bodyScale) || 1;
+}
+
+/** 某角色丟出去的道具大小倍率（連恩的 poopoo恩 2.5 倍） */
+export function itemScaleFor(characterId: string | null | undefined, itemId: string): number {
+  return traitsOf(characterId).ownItemScale?.[itemId] ?? 1;
 }
 
 export function traitsOf(id: string | null | undefined): CharacterTraits {

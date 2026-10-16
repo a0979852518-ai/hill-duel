@@ -49,7 +49,8 @@ export const ARENA = {
   /** 單次投擲最多模擬幾秒，避免無限飛行 */
   maxFlightSeconds: 8,
   /** 超出這個範圍就算飛出場外 */
-  outOfBounds: { minX: -1000, maxX: 5400, maxY: 1180 },
+  // 沒有地圖邊界：地面往兩邊延伸很遠，東西不會掉下去（這裡只是安全值）
+  outOfBounds: { minX: -20000, maxX: 24400, maxY: 1180 },
   /** 角色起始位置（腳底 x） */
   characterStartX: [900, 3500],
   /**

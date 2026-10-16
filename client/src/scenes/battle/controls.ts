@@ -346,7 +346,7 @@ export class AimDisplay {
    * 畫瞄準箭頭與蓄力環
    * @param power null = 還沒開始蓄力
    */
-  draw(seat: Seat, feetX: number, angle: number | null, power: number | null): void {
+  draw(seat: Seat, feetX: number, angle: number | null, power: number | null, bodyScale = 1): void {
     this.visible = true;
     const g = this.g;
     g.clear();
@@ -354,7 +354,7 @@ export class AimDisplay {
       this.label.setVisible(false);
       return;
     }
-    const lp = launchPoint(seat, feetX);
+    const lp = launchPoint(seat, feetX, bodyScale);
     const dir = seat === 0 ? 1 : -1;
     const rad = Phaser.Math.DegToRad(angle);
     const ux = Math.cos(rad) * dir,

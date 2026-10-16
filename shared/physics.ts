@@ -15,23 +15,24 @@ export interface Rect {
 }
 
 /** 角色受擊判定框（feetX = 角色目前腳底 x，角色會被擊退所以位置會變） */
-export function characterHitbox(feetX: number): Rect {
-  const { w, h } = ARENA.characterHitbox;
+export function characterHitbox(feetX: number, scale = 1): Rect {
+  const w = ARENA.characterHitbox.w * scale,
+    h = ARENA.characterHitbox.h * scale;
   return { x: feetX - w / 2, y: ARENA.groundY - h, w, h };
 }
 
 /** 頭部判定：身體上緣以上 */
-export function headLineY(): number {
-  return ARENA.groundY - ARENA.characterBody.torsoH;
+export function headLineY(scale = 1): number {
+  return ARENA.groundY - ARENA.characterBody.torsoH * scale;
 }
 
 export function defenseRect(d: Pick<DefenseView, 'x' | 'y' | 'w' | 'h'>): Rect {
   return { x: d.x - d.w / 2, y: d.y - d.h / 2, w: d.w, h: d.h };
 }
 
-export function launchPoint(seat: Seat, feetX: number): { x: number; y: number } {
+export function launchPoint(seat: Seat, feetX: number, scale = 1): { x: number; y: number } {
   const dir = seat === 0 ? 1 : -1;
-  return { x: feetX + ARENA.launchOffset.x * dir, y: ARENA.groundY + ARENA.launchOffset.y };
+  return { x: feetX + ARENA.launchOffset.x * dir * scale, y: ARENA.groundY + ARENA.launchOffset.y * scale };
 }
 
 /** 防禦道具放手位置的合法區域（跟著角色位置移動） */

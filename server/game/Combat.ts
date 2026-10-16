@@ -1,7 +1,8 @@
 // 攻擊結算：用物理世界模擬投擲 → 判斷命中 → 計算傷害 → 更新防禦與狀態。
 // 全部在伺服器上計算，客戶端只負責播放結果。
 
-import type { ThrowableDef } from '../../shared/config/items.js';
+import { getItem, type ThrowableDef } from '../../shared/config/items.js';
+import { itemScaleFor } from '../../shared/config/characters.js';
 import { ARENA, DEFENSE_HIT, KNOCKBACK } from '../../shared/config/game.js';
 import type { KnockRequest } from './PhysicsWorld.js';
 import { characterHitbox, distPointRect, headLineY } from '../../shared/physics.js';
@@ -19,6 +20,9 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
   let statusApplied: ThrowEvent['statusApplied'] = null;
   let stuck: ThrowEvent['stuck'];
   const enemy: Seat = seat === 0 ? 1 : 0;
+  // 連恩丟的 poopoo恩 2.5 倍大：碰撞半徑一起放大
+  const projScale = itemScaleFor(state.characterIds[seat], item.id);
+  if (projScale !== 1) item = { ...item, radius: item.radius * projScale };
 
   const sim = state.physics.throwProjectile(seat, item, angle, power, (impact, impactSpeed, impactVel) => {
     const destroyedNow: string[] = [];
@@ -62,7 +66,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
         bounces = impact.bounces ?? 0;
         amount *= Math.pow(0.5, bounces);
         // 打到頭（身體上緣以上）傷害 ×1.5，可再和其他倍率（精神傷害、乳清…）相乘
-        if (impact.y < headLineY()) {
+        if (impact.y < headLineY(state.physics.getCharScale(target))) {
           // 李信安（物理系）爆頭 ×2
           amount *= state.traits(seat).headshotMultiplier ?? HEADSHOT_MULTIPLIER;
           headshot = true;
@@ -82,7 +86,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
         // 黏在身上（poopoo恩）：記下命中點相對腳底的位置
         if (item.sticky && effectsOn(target)) stickAt = { seat: target, x: impact.x, y: impact.y, feetX: state.physics.getCharX(target) };
       } else if (item.explosionRadius > 0 && impact.kind !== 'out') {
-        const dist = distPointRect(impact.x, impact.y, characterHitbox(state.physics.getCharX(target)));
+        const dist = distPointRect(impact.x, impact.y, characterHitbox(state.physics.getCharX(target), state.physics.getCharScale(target)));
         if (dist <= item.explosionRadius) {
           const falloff = 1 - (dist / item.explosionRadius) * 0.5; // 越靠近爆心越痛：邊緣剩 50%
           amount = item.damage * item.splashMultiplier * falloff;
@@ -102,26 +106,38 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
 
     // 被打死的人不用黏了（死掉就會消失）
     if (stickAt && state.fighters[stickAt.seat].hp > 0) {
-      stuck = { seat: stickAt.seat, item: state.stick(stickAt.seat, item.id, stickAt.x, stickAt.y, stickAt.feetX) };
+      stuck = { seat: stickAt.seat, item: state.stick(stickAt.seat, item.id, stickAt.x, stickAt.y, stickAt.feetX, projScale) };
     }
 
     // 擊退（傷害算完才知道會不會被打死 → 打死就躺著不起來）
     if (knockSeat !== null && knockSpeed >= KNOCKBACK.minSpeed) {
-      knock = knockRequest(knockSeat, knockSpeed, impact.y, impactVel, state.fighters[knockSeat].hp <= 0, item.weightKg ?? 0.5);
+      knock = knockRequest(knockSeat, knockSpeed, impact.y, impactVel, state.fighters[knockSeat].hp <= 0, item.weightKg ?? 0.5, state.physics.getCharScale(knockSeat));
     }
 
     // 3) 附加狀態（只附加給敵人）
     if (item.onHitStatus && hitSeats.includes(enemy) && effectsOn(enemy)) {
-      const ok = state.applyStatus(enemy, item.onHitStatus.statusId, item.onHitStatus.turns);
-      statusApplied = { seat: enemy, statusId: item.onHitStatus.statusId, turns: item.onHitStatus.turns, ...(ok ? {} : { immune: true }) };
+      const applied = state.applyStatus(enemy, item.onHitStatus.statusId, item.onHitStatus.turns);
+      statusApplied = { seat: enemy, statusId: item.onHitStatus.statusId, turns: applied || item.onHitStatus.turns, ...(applied ? {} : { immune: true }) };
     }
     return { remove: destroyedNow, knock };
   });
   state.syncCharacters();
 
   // 被打倒的防禦道具壓到人
+  const crushHeals: NonNullable<ThrowEvent['crushHeals']> = [];
   for (const c of sim.crushes) {
     if (state.fighters[c.seat].hp <= 0) continue;
+    // 獸控倒下壓到葉柄承：回血，獸控消失
+    const owned = state.getDefense(c.uid) ?? state.wasDefense(c.uid);
+    const cdef = owned ? getItem(owned.itemId) : undefined;
+    if (owned && owned.owner === c.seat && cdef?.kind === 'defense' && cdef.crushHealsOwner) {
+      if (crushHeals.some((h) => h.uid === c.uid)) continue;
+      const h = state.heal(c.seat, cdef.crushHealsOwner);
+      if (h) crushHeals.push({ ...h, frame: c.frame, uid: c.uid });
+      const upd = state.destroyDefense(c.uid);
+      if (upd) defenseUpdates.push({ ...upd, reason: 'removed' });
+      continue;
+    }
     const entry = state.dealDamage(c.seat, DEFENSE_HIT.crushDamage, 'crush');
     if (entry) {
       entry.frame = c.frame;
@@ -147,6 +163,8 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     defenseUpdates,
     statusApplied,
     bounceFrames: sim.bounceFrames,
+    ...(projScale !== 1 ? { projScale } : {}),
+    ...(crushHeals.length ? { crushHeals } : {}),
     ...(stuck ? { stuck } : {}),
   };
 }
@@ -162,13 +180,13 @@ export function throwDurationMs(ev: ThrowEvent): number {
  *  打在中心附近 → 幾乎不轉，整個人被推最遠；
  *  打在中心以下 → 腳被掃開，上半身往前（朝出手方向）撲倒、彈得比較高。
  */
-export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: number; y: number }, stayDown: boolean, weightKg = 0.5): KnockRequest {
+export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: number; y: number }, stayDown: boolean, weightKg = 0.5, bodyScale = 1): KnockRequest {
   // 重量決定擊退「樣式」：中等重量 → 被推開、跌坐滑行；很重 → 整個人被打飛、在空中翻滾、落地彈好幾下
   const heavy = Math.max(0, Math.min(1, (weightKg - 0.3) / 1));
   const liftMul = 0.55 + 0.9 * heavy;
   const spinMul = 0.6 + 0.8 * heavy;
-  const half = ARENA.characterBody.torsoH / 2 + 16; // 身體中心到頭頂/腳底約 75px
-  const comY = ARENA.groundY - 75;
+  const half = (ARENA.characterBody.torsoH / 2 + 16) * bodyScale; // 身體中心到頭頂/腳底約 75px（矮的角色比較短）
+  const comY = ARENA.groundY - 75 * bodyScale;
   const rel = Math.max(-1, Math.min(1, (hitY - comY) / half)); // -1 頭頂、0 中心、+1 腳底
   const away = seat === 0 ? -1 : 1; // 被打的人往自己身後飛
   // 投擲物是往下砸的話，往後推的比例小一點（力量被地面吃掉）

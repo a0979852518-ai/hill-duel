@@ -1,7 +1,7 @@
 // 戰鬥畫面上方 UI：雙方名稱/角色/血量條、中央的行動玩家、倒數、階段。
 
 import * as Phaser from 'phaser';
-import { getCharacter } from '../../../../shared/config/characters.js';
+import { getCharacter, traitsOf } from '../../../../shared/config/characters.js';
 import { ARENA } from '../../../../shared/config/game.js';
 import { getStatus, PERMANENT_TURNS } from '../../../../shared/config/items.js';
 import type { PlayerView, RoomSnapshot, Seat, TurnPhase } from '../../../../shared/types.js';
@@ -112,7 +112,10 @@ export class Hud {
             const def = getStatus(s.statusId);
             const name = (def?.name ?? s.statusId).replace(/（.*）/, '');
             if (def?.stackable && def.damagePerTurn) return `${name} -${Math.round(def.damagePerTurn * (s.stacks ?? 1))}/回合`;
-            const mult = def?.incomingMultiplier ?? def?.outgoingMultiplier;
+            let mult = def?.incomingMultiplier ?? def?.outgoingMultiplier;
+            // 鄭霖澤：負面效果加倍（絲襪每層 ×1.4）
+            const k = traitsOf(p.characterId).statusStrengthMultiplier?.[s.statusId];
+            if (mult && k) mult = 1 + (mult - 1) * k;
             if (def?.stackable && mult) return `${name}×${+Math.pow(mult, s.stacks ?? 1).toFixed(2)}（${s.stacks ?? 1}層）`;
             return `${name}${s.remainingTurns >= PERMANENT_TURNS ? '' : '×' + s.remainingTurns}`;
           })
