@@ -488,6 +488,14 @@ export class BattleScene extends Phaser.Scene {
 
   private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean }[]): void {
     for (const d of damages) {
+      if (d.source === 'crush') {
+        damageNumber(this, this.xOf(d.seat), d.amount, '#ff7043', '被壓到！', '-', true);
+        this.cameras.main.shake(220, 0.01);
+        puff(this, this.xOf(d.seat), ARENA.groundY - 120);
+        this.hitCharacter(d.seat, true);
+        this.hud.setHp(d.seat, d.hpAfter);
+        continue;
+      }
       const color = d.headshot ? '#ff5252' : d.source === 'direct' ? '#ffeb3b' : d.source === 'functional' ? '#ffd54f' : '#ffffff';
       damageNumber(this, this.xOf(d.seat), d.amount, color, d.headshot ? '爆頭！' : d.source === 'direct' ? '直擊' : undefined, '-', d.source === 'direct');
       if (d.headshot) this.cameras.main.shake(300, 0.014);
@@ -533,10 +541,7 @@ export class BattleScene extends Phaser.Scene {
           const u = opts.reasons?.[uid];
           if (ds && u) {
             if (u.reason === 'fell') this.removeDefense(uid, ds, 'fall');
-            else {
-              floatingText(this, ds.root.x, ds.root.y - ds.view.h / 2 - 20, '破壞！', '#ffcc80');
-              this.removeDefense(uid, ds, 'break');
-            }
+            else this.removeDefense(uid, ds, 'break'); // 「擊垮！」已經在命中時顯示
           } else if (ds) this.removeDefense(uid, ds, 'fall');
         }
         // 被擊退的角色：在地上滑行時揚起塵土、每次落地彈起時砰一下
@@ -645,6 +650,9 @@ export class BattleScene extends Phaser.Scene {
         this.speedLines.set(vx, vy, Math.hypot(vx, vy));
       },
       onFrame: (k) => {
+        // 被倒下的防禦道具壓到
+        const crush = e.damages.filter((d) => d.frame === k);
+        if (crush.length) this.applyDamages(crush);
         // 命中後鏡頭跟著被打飛的人
         if (!flying && knocked && k > e.impactFrame + 4) {
           const f = knocked[1]![Math.min(k, knocked[1]!.length - 1)];
@@ -693,8 +701,17 @@ export class BattleScene extends Phaser.Scene {
       }
     }
     if (e.impact.kind === 'defense') floatingText(this, e.impact.x, e.impact.y - 40, '擋下了！', '#80deea');
-    this.applyDamages(e.damages);
+    this.applyDamages(e.damages.filter((d) => d.frame === undefined));
     if (e.statusApplied) this.showStatusApplied(e.statusApplied);
+    // 被打壞的防禦道具：變灰、繼續倒，等全部靜止才碎掉
+    for (const u of e.defenseUpdates) {
+      if (!u.destroyed || u.reason === 'fell') continue;
+      const ds = this.defenses.get(u.uid);
+      if (!ds) continue;
+      floatingText(this, ds.root.x, ds.root.y - ds.view.h / 2 - 20, '擊垮！', '#ffcc80');
+      (ds.root.list[0] as Phaser.GameObjects.Image).setTint(0x9e9e9e);
+      ds.label.setText('');
+    }
     if (e.damages.length === 0 && e.impact.kind === 'platform') floatingText(this, e.impact.x, e.impact.y - 30, '沒打中', '#ffffff');
   }
 

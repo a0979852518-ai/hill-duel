@@ -134,7 +134,8 @@ export class BattleState {
     if (d.durability !== null) d.durability = Math.max(0, d.durability - Math.round(structureDamage));
     const destroyed =
       (d.durability !== null && d.durability <= 0) || (d.maxHits !== null && d.hits >= d.maxHits);
-    if (destroyed) this.removeDefense(uid);
+    // 被打壞：先從資料中移除（不能再擋），物理上的身體由投擲模擬讓它倒完、靜止後才移除
+    if (destroyed) this.defenses = this.defenses.filter((x) => x.uid !== uid);
     return { uid, durability: d.durability, hits: d.hits, destroyed, reason: destroyed ? 'hit' : undefined };
   }
 

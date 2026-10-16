@@ -117,8 +117,10 @@ export interface DamageEntry {
   seat: Seat;
   amount: number;
   hpAfter: number;
-  /** 'direct' 直擊, 'splash' 波及, 'status' 狀態, 'functional' 功能道具 */
-  source: 'direct' | 'splash' | 'status' | 'functional';
+  /** 'direct' 直擊, 'splash' 波及, 'status' 狀態, 'functional' 功能道具, 'crush' 被倒下的道具壓到 */
+  source: 'direct' | 'splash' | 'status' | 'functional' | 'crush';
+  /** 在投擲動畫的第幾格顯示（被倒下的防禦道具壓到）；沒有 = 命中當下 */
+  frame?: number;
   /** source = 'status' 時是哪個狀態造成的 */
   statusId?: string;
   /** 打到頭（傷害 ×1.5） */

@@ -2,7 +2,7 @@
 // 全部在伺服器上計算，客戶端只負責播放結果。
 
 import type { ThrowableDef } from '../../shared/config/items.js';
-import { ARENA, KNOCKBACK } from '../../shared/config/game.js';
+import { ARENA, DEFENSE_HIT, KNOCKBACK } from '../../shared/config/game.js';
 import type { KnockRequest } from './PhysicsWorld.js';
 import { characterHitbox, distPointRect, headLineY } from '../../shared/physics.js';
 import type { BattleEvent, DamageEntry, DefenseUpdate, Seat } from '../../shared/types.js';
@@ -88,6 +88,16 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     return { remove: destroyedNow, knock };
   });
   state.syncCharacters();
+
+  // 被打倒的防禦道具壓到人
+  for (const c of sim.crushes) {
+    if (state.fighters[c.seat].hp <= 0) continue;
+    const entry = state.dealDamage(c.seat, DEFENSE_HIT.crushDamage, 'crush');
+    if (entry) {
+      entry.frame = c.frame;
+      damages.push(entry);
+    }
+  }
 
   // 被撞下平台的防禦道具
   defenseUpdates.push(...state.dropFallen(sim.fell));

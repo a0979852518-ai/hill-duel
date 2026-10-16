@@ -9,7 +9,7 @@
 // ============================================================
 
 import Matter from 'matter-js';
-import { ARENA, KNOCKBACK, PHYSICS } from '../../shared/config/game.js';
+import { ARENA, DEFENSE_HIT, KNOCKBACK, PHYSICS } from '../../shared/config/game.js';
 import type { DefenseDef, ThrowableDef } from '../../shared/config/items.js';
 import { launchPoint } from '../../shared/physics.js';
 import type { ImpactKind, PhysicsFrames, Seat } from '../../shared/types.js';
@@ -507,8 +507,9 @@ export class PhysicsWorld {
   /**
    * 投擲：投擲物從出手點飛出，第一次碰到東西就算命中，
    * 之後繼續彈跳一下、被撞到的防禦道具繼續倒，直到靜止。
-   * @param onImpact 命中當下呼叫，回傳：要立刻移除的防禦道具 uid（被打壞的）、
-   *                 以及要被擊退的角色與擊退初速（像素/秒）
+   * @param onImpact 命中當下呼叫，回傳：被打壞的防禦道具 uid（不會立刻消失，
+   *                 會繼續倒、等全部靜止才移除）、以及要被擊退的角色
+   * @returns crushes：被打倒的防禦道具壓到角色（第幾格、壓到誰）
    */
   throwProjectile(
     seat: Seat,
@@ -516,8 +517,30 @@ export class PhysicsWorld {
     angleDeg: number,
     power: number,
     onImpact: (impact: ThrowImpact, impactSpeed: number, impactVel: { x: number; y: number }) => { remove: string[]; knock?: KnockRequest },
-  ): { frames: PhysicsFrames; impactFrame: number; impact: ThrowImpact; fell: string[]; impactSpeed: number } {
+  ): {
+    frames: PhysicsFrames;
+    impactFrame: number;
+    impact: ThrowImpact;
+    fell: string[];
+    impactSpeed: number;
+    crushes: { seat: Seat; uid: string; frame: number }[];
+  } {
     const frames = this.newFrames();
+    const G = ARENA.groundY;
+    // 被打壞、還在倒的防禦道具（全部靜止後才移除）
+    const dying = new Set<string>();
+    // 一開始就戴在頭上/靠在身上的道具：晃動碰到不算「壓到」
+    const wornBy: [Set<string>, Set<string>] = [new Set(), new Set()];
+    for (const [uid, info] of this.defs) {
+      for (const s of [0, 1] as Seat[]) {
+        const p = info.body.position;
+        if (Math.abs(p.x - this.charX[s]) < 60 && p.y < G - 60) wornBy[s].add(uid);
+      }
+    }
+    const crushes: { seat: Seat; uid: string; frame: number }[] = [];
+    const startAngle = new Map<string, number>();
+    for (const [uid, info] of this.defs) startAngle.set(uid, info.body.angle);
+    const crushed = new Set<string>();
     const last = this.snapshotPoses();
     const dir = seat === 0 ? 1 : -1;
     const lp = launchPoint(seat, this.charX[seat]);
@@ -544,10 +567,34 @@ export class PhysicsWorld {
     let impactFrame = -1;
     let impactSpeed = 0;
     const onCollide = (ev: any) => {
-      if (impact) return;
       for (const pair of ev.pairs) {
         const a = pair.bodyA.parent,
           b = pair.bodyB.parent;
+        // 被打倒的防禦道具壓到角色：道具從上方、夠快地撞上身體
+        const la: string = a.label ?? '',
+          lb: string = b.label ?? '';
+        const defB = la.startsWith('def:') ? a : lb.startsWith('def:') ? b : null;
+        const charB = /^char[01]$/.test(la) ? a : /^char[01]$/.test(lb) ? b : null;
+        if (impact && defB && charB) {
+          const uid = (defB.label as string).slice(4);
+          const s = Number((charB.label as string).slice(4)) as Seat;
+          const contact = pair.collision?.supports?.[0] ?? defB.position;
+          // 接觸點的速度（質心速度＋旋轉造成的速度）：倒下來的道具上端比質心快很多
+          const w = defB.angularVelocity * 60;
+          const rx = contact.x - defB.position.x,
+            ry = contact.y - defB.position.y;
+          const pvx = defB.velocity.x * 60 - w * ry,
+            pvy = defB.velocity.y * 60 + w * rx;
+          const sp = Math.hypot(pvx, pvy);
+          const tilted = Math.abs(defB.angle - (startAngle.get(uid) ?? defB.angle)) > 0.2 || pvy > 60;
+          const key = `${uid}:${s}`;
+          if (!crushed.has(key) && !wornBy[s].has(uid) && tilted && sp >= DEFENSE_HIT.crushSpeed && contact.y < G - 50) {
+            crushed.add(key);
+            crushes.push({ seat: s, uid, frame: frames.count });
+          }
+          continue;
+        }
+        if (impact) continue;
         const other = a === proj ? b : b === proj ? a : null;
         if (!other) continue;
         const label: string = other.label ?? '';
@@ -590,12 +637,11 @@ export class PhysicsWorld {
           impactSpeed = lastSpeed;
           impactFrame = frames.count; // 下一格就是命中格
           impact = { ...impact, x: r1(impact.x), y: r1(impact.y) };
+          // 打中防禦道具：照投擲物的重量與速度額外推一把（打在上半部會讓它往後倒）
+          if (impact.kind === 'defense' && impact.defenseUid) this.kickDefense(impact.defenseUid, impact, lastVel, item.weightKg ?? 0.5);
           const res = onImpact(impact, impactSpeed, lastVel);
           if (res.knock) knock = this.startKnock(res.knock, frames);
-          for (const uid of res.remove) {
-            frames.gone[uid] = frames.count;
-            this.removeDefense(uid);
-          }
+          for (const uid of res.remove) dying.add(uid);
           if (impact.kind === 'out') {
             Composite.remove(this.engine.world, proj);
             projGone = true;
@@ -613,7 +659,10 @@ export class PhysicsWorld {
         if (step % ARENA.frameEvery === 0) {
           this.record(frames, last, projGone ? undefined : proj);
           if (knock) this.recordKnock(knock, frames);
-          fell.push(...this.removeFallen(frames));
+          for (const uid of this.removeFallen(frames)) {
+            if (dying.delete(uid)) continue; // 已經被打壞的，掉出場外就算了
+            fell.push(uid);
+          }
         }
         if (projGone) {
           restSteps = this.allAtRest() && (!knock || knock.done) ? restSteps + 1 : 0;
@@ -638,8 +687,29 @@ export class PhysicsWorld {
       }
       knock.done = true;
     }
-    fell.push(...this.removeFallen(frames));
+    for (const uid of this.removeFallen(frames)) if (!dying.delete(uid)) fell.push(uid);
+    // 被打壞的道具倒完、靜止了才消失
+    for (const uid of dying) {
+      frames.gone[uid] = Math.max(0, frames.count - 1);
+      this.removeDefense(uid);
+    }
     if (impactFrame < 0) impactFrame = Math.max(0, frames.count - 1);
-    return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell, impactSpeed };
+    return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell, impactSpeed, crushes };
+  }
+
+  /** 投擲物打中防禦道具時的額外衝量（線速度＋依打點產生的旋轉） */
+  private kickDefense(uid: string, at: { x: number; y: number }, vel: { x: number; y: number }, weightKg: number): void {
+    const info = this.defs.get(uid);
+    if (!info) return;
+    const b = info.body;
+    Sleeping.set(b, false);
+    // 衝量（質量單位 × 像素/步）
+    const jx = (DEFENSE_HIT.kick * weightKg * vel.x) / 60;
+    const jy = (DEFENSE_HIT.kick * weightKg * vel.y * 0.5) / 60;
+    const rx = at.x - b.position.x,
+      ry = at.y - b.position.y;
+    Body.setVelocity(b, { x: b.velocity.x + jx / b.mass, y: b.velocity.y + jy / b.mass });
+    // Matter 的轉動慣量放大了 4 倍（比較穩），這裡補回來一些讓它容易被打倒
+    Body.setAngularVelocity(b, b.angularVelocity + (rx * jy - ry * jx) * b.inverseInertia * 2.5);
   }
 }

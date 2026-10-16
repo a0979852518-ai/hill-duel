@@ -133,7 +133,7 @@ export const AIM_CONFIG = {
 /** 物理材質（Matter.js） */
 export const PHYSICS = {
   projectile: { friction: 0.35, restitution: 0.32, frictionAir: 0, density: 0.004 },
-  defense: { friction: 0.7, restitution: 0.05, frictionAir: 0.01, density: 0.002 },
+  defense: { friction: 0.5, restitution: 0.08, frictionAir: 0.004, density: 0.002 },
   ground: { friction: 0.8, restitution: 0.1 },
   /** 命中後投擲物繼續彈跳/滾動的展示時間（毫秒） */
   afterImpactMs: 1100,
@@ -141,4 +141,16 @@ export const PHYSICS = {
   settleMaxMs: 3500,
   /** 掉到這個高度以下的防禦道具算掉出場外 */
   killY: 1200,
+} as const;
+
+/**
+ * 防禦道具被打中時的反應與「倒下來壓到人」。
+ *  kick        投擲物打中防禦道具時額外的推力（× 投擲物重量kg × 命中速度）；越大越容易被打歪、打倒
+ *  crushDamage 被打倒的防禦道具壓到角色時扣的血（不吃攻擊方的倍率）
+ *  crushSpeed  道具撞到角色時至少要這麼快（像素/秒）才算「壓到」
+ */
+export const DEFENSE_HIT = {
+  kick: 3.4,
+  crushDamage: 30,
+  crushSpeed: 120,
 } as const;
