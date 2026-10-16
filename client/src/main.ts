@@ -5,6 +5,7 @@ import { ARENA } from '../../shared/config/game.js';
 import { ERROR_TEXT, type RoomSnapshot } from '../../shared/types.js';
 import { Network } from './net/Network.js';
 import { BattleScene } from './scenes/BattleScene.js';
+import { BattleUIScene } from './scenes/BattleUIScene.js';
 import { BackdropScene, BootScene } from './scenes/BootScene.js';
 import { store } from './state/store.js';
 import { clearUi, showCharacterSelect, showGameOver, showMenu, showWaiting } from './ui/screens.js';
@@ -23,7 +24,7 @@ const game = new Phaser.Game({
   // 慢的裝置（低於 5 FPS）時 Phaser 預設會把每幀時間縮成 16ms，動畫和計時會變得超慢；
   // 放寬到 2 FPS 才啟動保護，讓慢裝置的動畫仍跟真實時間同步。
   fps: { min: 2 },
-  scene: [BootScene, BackdropScene, BattleScene],
+  scene: [BootScene, BackdropScene, BattleScene, BattleUIScene],
 });
 
 let assetsReady = false;

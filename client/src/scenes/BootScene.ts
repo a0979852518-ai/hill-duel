@@ -1,6 +1,6 @@
 import * as Phaser from 'phaser';
 import { ensurePlaceholders, queueAssets } from '../game/assets.js';
-import { drawArena, queueBackground } from '../game/arena.js';
+import { drawArena, fitArenaCamera, queueBackground } from '../game/arena.js';
 import { FONT } from './battle/effects.js';
 
 /** 載入所有素材（缺的自動補 placeholder），完成後進入背景場景 */
@@ -28,6 +28,7 @@ export class BackdropScene extends Phaser.Scene {
   }
   create(): void {
     drawArena(this);
-    this.add.rectangle(640, 360, 1280, 720, 0x1d2733, 0.35);
+    fitArenaCamera(this);
+    this.add.rectangle(640, 360, 1280, 720, 0x1d2733, 0.35).setScrollFactor(0).setScale(1 / this.cameras.main.zoom);
   }
 }

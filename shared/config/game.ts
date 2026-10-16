@@ -29,10 +29,17 @@ export const GAME_CONFIG = {
   drawCount: 2,
 } as const;
 
-/** 場地座標（邏輯座標，畫面會依視窗等比縮放） */
+/**
+ * 場地設定
+ *  width/height   畫面（鏡頭）大小，會依視窗等比縮放
+ *  world          整個戰場的大小，比畫面大，鏡頭會移動與縮放
+ */
 export const ARENA = {
   width: 1280,
   height: 720,
+  world: { width: 2600, height: 1100 },
+  /** 地面高度（角色腳底的 y） */
+  groundY: 980,
   /** 重力（像素/秒²），各投擲物還會再乘上自己的 gravityScale。數字越大東西越「重」 */
   gravity: 1150,
   /** 物理模擬的固定步長（秒）；用 120Hz 避免高速物體穿透薄的東西 */
@@ -42,15 +49,15 @@ export const ARENA = {
   /** 單次投擲最多模擬幾秒，避免無限飛行 */
   maxFlightSeconds: 8,
   /** 超出這個範圍就算飛出場外 */
-  outOfBounds: { minX: -300, maxX: 1580, maxY: 760 },
-  platforms: [
-    { x: 40, y: 520, w: 330, h: 200 }, // 玩家一（左）
-    { x: 910, y: 520, w: 330, h: 200 }, // 玩家二（右）
-  ],
-  /** 角色腳底中心位置 */
-  characterFeet: [
-    { x: 150, y: 520 },
-    { x: 1130, y: 520 },
+  outOfBounds: { minX: -250, maxX: 2850, maxY: 1180 },
+  /** 兩側邊界的矮牆高度（擋住滑動的人與道具，高飛的投擲物會飛出去） */
+  wallHeight: 260,
+  /** 角色起始位置（腳底 x） */
+  characterStartX: [400, 2200],
+  /** 角色被擊退時，腳底 x 允許的範圍（不會被推到對方那半邊或場外） */
+  characterXRange: [
+    [120, 1100],
+    [1500, 2480],
   ],
   /** 角色受擊判定框大小（以腳底中心為基準往上；配合 150px 高的真人站姿） */
   characterHitbox: { w: 56, h: 150 },
@@ -59,14 +66,35 @@ export const ARENA = {
   /** 投擲出手點：相對腳底中心的偏移（右側玩家 x 會自動鏡像） */
   launchOffset: { x: 30, y: -135 },
   /**
-   * 防禦道具「放手位置」可選的區域（矩形）。
-   * index 0 = 左方玩家，1 = 右方玩家。道具會從放手位置掉下來，照物理堆疊。
+   * 防禦道具「放手位置」可選的區域，相對角色腳底：
+   * back = 往身後多少、front = 往對手方向多少、top = 往上多高。
    * 包含自己頭頂上方，所以鋼盔可以直接戴到頭上。
    */
-  placementZones: [
-    { x: 60, y: 170, w: 340, h: 330 },
-    { x: 880, y: 170, w: 340, h: 330 },
-  ],
+  placementZone: { back: 90, front: 330, top: 340 },
+} as const;
+
+/** 擊退：角色被打中後依投擲物重量與速度滑退 */
+export const KNOCKBACK = {
+  /** 擊退初速 = k × √(重量kg) × (命中速度 / 1500) */
+  k: 420,
+  /** 擊退初速上限（像素/秒） */
+  maxSpeed: 650,
+  /** 爆頭額外倍率 */
+  headshotBonus: 1.25,
+  /** 往上彈的比例 */
+  lift: 0.35,
+  /** 擊退超過這個初速才會「被打倒再站起來」，否則只是踉蹌 */
+  knockdownSpeed: 450,
+} as const;
+
+/** 鏡頭 */
+export const CAMERA = {
+  /** 輪到某人時對準他的縮放（1 = 原尺寸） */
+  followZoom: 0.8,
+  /** 跟隨投擲物時的縮放 */
+  throwZoom: 0.72,
+  /** 開場遠景停留時間（毫秒） */
+  introHoldMs: 1600,
 } as const;
 
 /** 投擲操作：滑鼠/手指決定方向，按住蓄力，放開投出 */
@@ -90,5 +118,5 @@ export const PHYSICS = {
   /** 堆疊最多模擬多久等它停下來（毫秒） */
   settleMaxMs: 3500,
   /** 掉到這個高度以下的防禦道具算掉出場外 */
-  killY: 760,
+  killY: 1200,
 } as const;

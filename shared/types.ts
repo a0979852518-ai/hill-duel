@@ -43,6 +43,8 @@ export interface PlayerView {
   hp: number;
   maxHp: number;
   statuses: StatusView[];
+  /** 角色腳底目前的 x（會被擊退而改變） */
+  x: number;
 }
 
 export interface DefenseView {
@@ -76,6 +78,8 @@ export interface PhysicsFrames {
   p?: [number, number, number][];
   d: Record<string, [number, number, number][]>;
   gone: Record<string, number>;
+  /** 被擊退的角色：座位 → [腳底x, 腳底y, 傾斜角][]（只有會動的才會出現） */
+  c?: Partial<Record<'0' | '1', [number, number, number][]>>;
 }
 
 export interface TimerView {

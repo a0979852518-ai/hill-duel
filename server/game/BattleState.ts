@@ -1,6 +1,7 @@
 // 戰鬥中的權威資料：血量、狀態、場上防禦道具。
 // 傷害、防禦耐久、狀態全部只在這裡改，避免各模組各算各的。
 
+import { ARENA } from '../../shared/config/game.js';
 import { getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
 import type { DamageEntry, DefenseUpdate, DefenseView, HealEntry, Seat, StatusView } from '../../shared/types.js';
 import { PhysicsWorld } from './PhysicsWorld.js';
@@ -10,6 +11,8 @@ export interface FighterState {
   hp: number;
   maxHp: number;
   statuses: StatusView[];
+  /** 腳底 x（被擊退會改變） */
+  x: number;
 }
 
 export interface DefenseState extends DefenseView {
@@ -26,8 +29,8 @@ export class BattleState {
 
   constructor(maxHp: [number, number]) {
     this.fighters = [
-      { seat: 0, hp: maxHp[0], maxHp: maxHp[0], statuses: [] },
-      { seat: 1, hp: maxHp[1], maxHp: maxHp[1], statuses: [] },
+      { seat: 0, hp: maxHp[0], maxHp: maxHp[0], statuses: [], x: ARENA.characterStartX[0] },
+      { seat: 1, hp: maxHp[1], maxHp: maxHp[1], statuses: [], x: ARENA.characterStartX[1] },
     ];
   }
 
@@ -145,6 +148,11 @@ export class BattleState {
   removeDefense(uid: string): void {
     this.defenses = this.defenses.filter((d) => d.uid !== uid);
     this.physics.removeDefense(uid);
+  }
+
+  /** 擊退後把角色位置寫回 */
+  syncCharacters(): void {
+    for (const f of this.fighters) f.x = Math.round(this.physics.getCharX(f.seat) * 10) / 10;
   }
 
   /** 物理模擬後，把每個防禦道具的新位置/角度寫回 */

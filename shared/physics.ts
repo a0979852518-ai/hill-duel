@@ -14,20 +14,32 @@ export interface Rect {
   h: number;
 }
 
-export function characterHitbox(seat: Seat): Rect {
-  const feet = ARENA.characterFeet[seat];
+/** 角色受擊判定框（feetX = 角色目前腳底 x，角色會被擊退所以位置會變） */
+export function characterHitbox(feetX: number): Rect {
   const { w, h } = ARENA.characterHitbox;
-  return { x: feet.x - w / 2, y: feet.y - h, w, h };
+  return { x: feetX - w / 2, y: ARENA.groundY - h, w, h };
+}
+
+/** 頭部判定：身體上緣以上 */
+export function headLineY(): number {
+  return ARENA.groundY - ARENA.characterBody.torsoH;
 }
 
 export function defenseRect(d: Pick<DefenseView, 'x' | 'y' | 'w' | 'h'>): Rect {
   return { x: d.x - d.w / 2, y: d.y - d.h / 2, w: d.w, h: d.h };
 }
 
-export function launchPoint(seat: Seat): { x: number; y: number } {
-  const feet = ARENA.characterFeet[seat];
+export function launchPoint(seat: Seat, feetX: number): { x: number; y: number } {
   const dir = seat === 0 ? 1 : -1;
-  return { x: feet.x + ARENA.launchOffset.x * dir, y: feet.y + ARENA.launchOffset.y };
+  return { x: feetX + ARENA.launchOffset.x * dir, y: ARENA.groundY + ARENA.launchOffset.y };
+}
+
+/** 防禦道具放手位置的合法區域（跟著角色位置移動） */
+export function placementZone(seat: Seat, feetX: number): Rect {
+  const z = ARENA.placementZone;
+  const dir = seat === 0 ? 1 : -1;
+  const x0 = dir > 0 ? feetX - z.back : feetX - z.front;
+  return { x: x0, y: ARENA.groundY - z.top, w: z.back + z.front, h: z.top - 20 };
 }
 
 /** 點到矩形的最短距離（點在矩形內 = 0） */

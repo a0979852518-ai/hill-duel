@@ -55,6 +55,12 @@ export interface ThrowableDef extends ItemBase {
   maxSpeed: number;
   /** 重力倍率：越大掉越快 */
   gravityScale: number;
+  /** 真實重量（公斤）：影響擊退力道，預設 0.5 */
+  weightKg?: number;
+  /** 空氣阻力（0 = 沒有；輕的東西大，飛一飛就慢下來），預設 0 */
+  frictionAir?: number;
+  /** 飛行時的旋轉速度（弧度/格），預設 0.25 */
+  spin?: number;
   /** 投擲物本身的碰撞半徑 */
   radius: number;
   /** 爆炸半徑（0 = 不爆炸，只有直擊才有傷害） */
@@ -135,7 +141,16 @@ export const ITEMS: ItemDef[] = [
     placeholder: { shape: 'rect', color: 0xffffff },
     tags: ['light'],
     damage: 20,
-    ...STANDARD_THROW,
+    // 香菸很輕：要用力丟，空氣阻力大，飛不遠也飄
+    weightKg: 0.002,
+    frictionAir: 0.0075,
+    minSpeed: 500,
+    maxSpeed: 2900,
+    gravityScale: 0.8,
+    radius: 10,
+    spin: 0.12,
+    explosionRadius: 24,
+    splashMultiplier: 0.5,
     onHitStatus: { statusId: 'smoke', turns: 999 },
   },
   {
@@ -147,7 +162,16 @@ export const ITEMS: ItemDef[] = [
     placeholder: { shape: 'circle', color: 0x222222 },
     tags: ['heavy'],
     damage: 10,
-    ...STANDARD_THROW,
+    // 機車鎖很重：丟不快，但幾乎不受空氣影響，擊退最強
+    weightKg: 1.3,
+    frictionAir: 0.0002,
+    minSpeed: 380,
+    maxSpeed: 1780,
+    gravityScale: 1.08,
+    radius: 13,
+    spin: 0.3,
+    explosionRadius: 30,
+    splashMultiplier: 0.5,
     onHitStatus: { statusId: 'stun', turns: 1 },
   },
   {
@@ -159,7 +183,16 @@ export const ITEMS: ItemDef[] = [
     placeholder: { shape: 'rect', color: 0x37a5cc },
     tags: ['heavy'],
     damage: 30,
-    ...STANDARD_THROW,
+    // 軟體盒（中等重量）
+    weightKg: 0.7,
+    frictionAir: 0.0008,
+    minSpeed: 400,
+    maxSpeed: 1850,
+    gravityScale: 1,
+    radius: 12,
+    spin: 0.25,
+    explosionRadius: 30,
+    splashMultiplier: 0.5,
   },
   {
     id: 'acCard',
@@ -170,7 +203,16 @@ export const ITEMS: ItemDef[] = [
     placeholder: { shape: 'rect', color: 0x6ec1e4 },
     tags: ['light'],
     damage: 10,
-    ...STANDARD_THROW,
+    // 卡片很輕又扁：空氣阻力很大，要很大力
+    weightKg: 0.006,
+    frictionAir: 0.0065,
+    minSpeed: 500,
+    maxSpeed: 2800,
+    gravityScale: 0.75,
+    radius: 10,
+    spin: 0.45,
+    explosionRadius: 24,
+    splashMultiplier: 0.5,
     onHitStatus: { statusId: 'blind', turns: 1 },
   },
   {
@@ -182,7 +224,16 @@ export const ITEMS: ItemDef[] = [
     placeholder: { shape: 'diamond', color: 0xe6e05a },
     tags: ['light'],
     damage: 10,
-    ...STANDARD_THROW,
+    // 半瓶果汁（偏重）
+    weightKg: 0.55,
+    frictionAir: 0.001,
+    minSpeed: 400,
+    maxSpeed: 1880,
+    gravityScale: 1,
+    radius: 12,
+    spin: 0.22,
+    explosionRadius: 30,
+    splashMultiplier: 0.5,
     onHitStatus: { statusId: 'disgust', turns: 1 },
   },
 

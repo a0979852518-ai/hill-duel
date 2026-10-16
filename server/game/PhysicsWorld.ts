@@ -1,14 +1,15 @@
 // ============================================================
 // 物理世界（Matter.js，只在伺服器上跑）
 // ------------------------------------------------------------
-// - 平台、角色是固定不動的物體；防禦道具是會掉落、堆疊、被撞歪的剛體。
+// - 地面、牆是固定的；角色平常固定，被打中時會依擊退力道滑退；
+//   防禦道具是會掉落、堆疊、被撞歪的剛體。
 // - 每次有東西動（放置、投擲、道具被移除）就在伺服器模擬到靜止，
 //   把每一格的位置記下來（PhysicsFrames）傳給雙方播放，所以兩邊畫面一定一致。
 // - 世界在整場戰鬥中持續存在，防禦道具的位置與角度會一直保留。
 // ============================================================
 
 import Matter from 'matter-js';
-import { ARENA, PHYSICS } from '../../shared/config/game.js';
+import { ARENA, KNOCKBACK, PHYSICS } from '../../shared/config/game.js';
 import type { DefenseDef, ThrowableDef } from '../../shared/config/items.js';
 import { launchPoint } from '../../shared/physics.js';
 import type { ImpactKind, PhysicsFrames, Seat } from '../../shared/types.js';
@@ -36,6 +37,24 @@ interface DefenseBodyInfo {
   offset: { x: number; y: number };
 }
 
+/** 擊退中的角色（運動學：滑行＋小跳＋傾斜，最後站起來） */
+interface KnockState {
+  seat: Seat;
+  dir: number;
+  v: number;
+  v0: number;
+  vy0: number;
+  t: number;
+  x: number;
+  yOff: number;
+  tilt: number;
+  knockdown: boolean;
+  phase: 'slide' | 'getup';
+  getupT: number;
+  done: boolean;
+  frames: [number, number, number][];
+}
+
 export interface ThrowImpact {
   kind: ImpactKind;
   x: number;
@@ -48,30 +67,36 @@ export class PhysicsWorld {
   private engine: any;
   private defs = new Map<string, DefenseBodyInfo>();
 
-  constructor() {
+  private chars: any[] = [];
+  /** 角色腳底 x */
+  private charX: [number, number];
+
+  constructor(startX: [number, number] = [ARENA.characterStartX[0], ARENA.characterStartX[1]]) {
+    this.charX = [...startX] as [number, number];
     this.engine = Engine.create({
       gravity: { x: 0, y: 1, scale: ARENA.gravity / 1e6 },
       enableSleeping: true,
       positionIterations: 10,
       velocityIterations: 8,
     });
-    const statics: any[] = [];
-    for (const p of ARENA.platforms) {
-      statics.push(
-        Bodies.rectangle(p.x + p.w / 2, p.y + p.h / 2, p.w, p.h, {
-          isStatic: true,
-          label: 'platform',
-          friction: PHYSICS.ground.friction,
-          restitution: PHYSICS.ground.restitution,
-          collisionFilter: { category: CAT.world, mask: 0xffff },
-        }),
-      );
-    }
+    const W = ARENA.world.width;
+    const G = ARENA.groundY;
+    const worldOpts = {
+      isStatic: true,
+      friction: PHYSICS.ground.friction,
+      restitution: PHYSICS.ground.restitution,
+      collisionFilter: { category: CAT.world, mask: 0xffff },
+    };
+    const statics: any[] = [
+      Bodies.rectangle(W / 2, G + 100, W + 800, 200, { ...worldOpts, label: 'ground' }),
+      Bodies.rectangle(-20, G - ARENA.wallHeight / 2, 40, ARENA.wallHeight, { ...worldOpts, label: 'wall' }),
+      Bodies.rectangle(W + 20, G - ARENA.wallHeight / 2, 40, ARENA.wallHeight, { ...worldOpts, label: 'wall' }),
+    ];
     for (const seat of [0, 1] as Seat[]) {
-      const feet = ARENA.characterFeet[seat];
+      const x = this.charX[seat];
       const cb = ARENA.characterBody;
-      const torso = Bodies.rectangle(feet.x, feet.y - cb.torsoH / 2, cb.torsoW, cb.torsoH, { label: `char${seat}` });
-      const head = Bodies.circle(feet.x, feet.y + cb.headY, cb.headR, { label: `char${seat}` });
+      const torso = Bodies.rectangle(x, G - cb.torsoH / 2, cb.torsoW, cb.torsoH, { label: `char${seat}` });
+      const head = Bodies.circle(x, G + cb.headY, cb.headR, { label: `char${seat}` });
       const body = Body.create({
         parts: [torso, head],
         isStatic: true,
@@ -79,9 +104,25 @@ export class PhysicsWorld {
         friction: 0.9,
         collisionFilter: { category: seat === 0 ? CAT.char0 : CAT.char1, mask: 0xffff },
       });
+      this.chars[seat] = body;
       statics.push(body);
     }
     Composite.add(this.engine.world, statics);
+  }
+
+  getCharX(seat: Seat): number {
+    return this.charX[seat];
+  }
+
+  /** 把角色移到腳底 x（固定物體直接搬移；會順便推動碰到的道具） */
+  private moveChar(seat: Seat, x: number): void {
+    const body = this.chars[seat];
+    const dx = x - this.charX[seat];
+    if (dx === 0) return;
+    Body.setPosition(body, { x: body.position.x + dx, y: body.position.y }, true);
+    this.charX[seat] = x;
+    // 叫醒道具，讓被角色推到或頭上頂著的東西有反應
+    for (const info of this.defs.values()) Sleeping.set(info.body, false);
   }
 
   // ------------------------------------------------------------ 防禦道具
@@ -151,6 +192,75 @@ export class PhysicsWorld {
     };
   }
 
+  // ------------------------------------------------------------ 擊退
+
+  private startKnock(seat: Seat, speed: number, frames: PhysicsFrames): KnockState {
+    const v0 = Math.min(KNOCKBACK.maxSpeed, speed);
+    const x = this.charX[seat];
+    const k: KnockState = {
+      seat,
+      dir: seat === 0 ? -1 : 1, // 往自己身後退
+      v: v0,
+      v0,
+      vy0: v0 * KNOCKBACK.lift,
+      t: 0,
+      x,
+      yOff: 0,
+      tilt: 0,
+      knockdown: v0 >= KNOCKBACK.knockdownSpeed,
+      phase: 'slide',
+      getupT: 0,
+      done: false,
+      // 補齊命中前的影格（站著不動）
+      frames: Array.from({ length: frames.count }, () => [x, 0, 0] as [number, number, number]),
+    };
+    frames.c ??= {};
+    frames.c[String(seat) as '0' | '1'] = k.frames;
+    return k;
+  }
+
+  private stepKnock(k: KnockState, dt: number): void {
+    if (k.done) return;
+    const g = ARENA.gravity;
+    const decel = PHYSICS.ground.friction * g;
+    const range = ARENA.characterXRange[k.seat];
+    if (k.phase === 'slide') {
+      k.t += dt;
+      k.v = Math.max(0, k.v - decel * dt);
+      let nx = k.x + k.dir * k.v * dt;
+      if (nx < range[0] || nx > range[1]) {
+        nx = Math.min(range[1], Math.max(range[0], nx));
+        k.v = 0;
+      }
+      k.x = nx;
+      k.yOff = Math.max(0, k.vy0 * k.t - 0.5 * g * k.t * k.t);
+      // 被打得往後仰（頭往被推的方向），被打倒的話幾乎躺平
+      const maxTilt = k.knockdown ? 1.35 : 0.35;
+      k.tilt = k.dir * maxTilt * Math.min(1, k.t / 0.18);
+      this.moveChar(k.seat, k.x);
+      if (k.v === 0 && k.yOff === 0) {
+        k.phase = 'getup';
+        k.getupT = 0;
+      }
+    } else {
+      k.getupT += dt;
+      const dur = k.knockdown ? 0.75 : 0.3;
+      const wait = k.knockdown ? 0.35 : 0; // 躺一下再起來
+      const f = Math.min(1, Math.max(0, (k.getupT - wait) / dur));
+      const maxTilt = k.knockdown ? 1.35 : 0.35;
+      k.tilt = k.dir * maxTilt * (1 - f * f * (3 - 2 * f));
+      if (f >= 1) {
+        k.tilt = 0;
+        k.done = true;
+      }
+    }
+  }
+
+  private recordKnock(k: KnockState, frames: PhysicsFrames): void {
+    // record() 已經把 frames.count +1，這裡補上同一格
+    while (k.frames.length < frames.count) k.frames.push([r1(k.x), r1(-k.yOff), r3(k.tilt)]);
+  }
+
   // ------------------------------------------------------------ 模擬
 
   private newFrames(): PhysicsFrames {
@@ -201,7 +311,7 @@ export class PhysicsWorld {
   private removeFallen(frames: PhysicsFrames): string[] {
     const out: string[] = [];
     for (const [uid, info] of this.defs) {
-      if (info.body.position.y > PHYSICS.killY || info.body.position.x < -200 || info.body.position.x > ARENA.width + 200) out.push(uid);
+      if (info.body.position.y > PHYSICS.killY || info.body.position.x < -200 || info.body.position.x > ARENA.world.width + 200) out.push(uid);
     }
     for (const uid of out) {
       frames.gone[uid] = frames.count;
@@ -236,19 +346,20 @@ export class PhysicsWorld {
   /**
    * 投擲：投擲物從出手點飛出，第一次碰到東西就算命中，
    * 之後繼續彈跳一下、被撞到的防禦道具繼續倒，直到靜止。
-   * @param onImpact 命中當下呼叫（回傳要立刻移除的防禦道具 uid，例如被打壞的）
+   * @param onImpact 命中當下呼叫，回傳：要立刻移除的防禦道具 uid（被打壞的）、
+   *                 以及要被擊退的角色與擊退初速（像素/秒）
    */
   throwProjectile(
     seat: Seat,
     item: ThrowableDef,
     angleDeg: number,
     power: number,
-    onImpact: (impact: ThrowImpact) => string[],
-  ): { frames: PhysicsFrames; impactFrame: number; impact: ThrowImpact; fell: string[] } {
+    onImpact: (impact: ThrowImpact, impactSpeed: number) => { remove: string[]; knock?: { seat: Seat; speed: number } },
+  ): { frames: PhysicsFrames; impactFrame: number; impact: ThrowImpact; fell: string[]; impactSpeed: number } {
     const frames = this.newFrames();
     const last = this.snapshotPoses();
     const dir = seat === 0 ? 1 : -1;
-    const lp = launchPoint(seat);
+    const lp = launchPoint(seat, this.charX[seat]);
     const p = Math.min(1, Math.max(0, power));
     const speed = item.minSpeed + (item.maxSpeed - item.minSpeed) * p; // px/s
     const rad = (angleDeg * Math.PI) / 180;
@@ -257,6 +368,7 @@ export class PhysicsWorld {
 
     const proj = Bodies.circle(lp.x, lp.y, item.radius, {
       ...PHYSICS.projectile,
+      frictionAir: item.frictionAir ?? PHYSICS.projectile.frictionAir,
       label: 'proj',
       collisionFilter: {
         category: CAT.proj,
@@ -264,11 +376,12 @@ export class PhysicsWorld {
       },
     });
     Body.setVelocity(proj, { x: (Math.cos(rad) * speed * dir) / 60, y: (-Math.sin(rad) * speed) / 60 });
-    Body.setAngularVelocity(proj, 0.25 * dir);
+    Body.setAngularVelocity(proj, (item.spin ?? 0.25) * dir);
     Composite.add(this.engine.world, proj);
 
     let impact: ThrowImpact | null = null;
     let impactFrame = -1;
+    let impactSpeed = 0;
     const onCollide = (ev: any) => {
       if (impact) return;
       for (const pair of ev.pairs) {
@@ -294,21 +407,27 @@ export class PhysicsWorld {
     let impactStep = -1;
     let restSteps = 0;
     let projGone = false;
+    let lastSpeed = speed;
+    let knock: KnockState | null = null;
     try {
       while (step < maxFlight + afterSteps + settleSteps) {
         if (!projGone && extraG !== 0) Body.applyForce(proj, proj.position, { x: 0, y: proj.mass * extraG });
+        if (!projGone && !impact) lastSpeed = Body.getSpeed(proj) * 60;
         Engine.update(this.engine, STEP_MS);
         step++;
+        if (knock) this.stepKnock(knock, STEP_MS / 1000);
         const ob = ARENA.outOfBounds;
         if (!impact && (proj.position.x < ob.minX || proj.position.x > ob.maxX || proj.position.y > ob.maxY)) {
           impact = { kind: 'out', x: proj.position.x, y: proj.position.y };
         }
         if (impact && impactStep < 0) {
           impactStep = step;
+          impactSpeed = lastSpeed;
           impactFrame = frames.count; // 下一格就是命中格
           impact = { ...impact, x: r1(impact.x), y: r1(impact.y) };
-          const remove = onImpact(impact);
-          for (const uid of remove) {
+          const res = onImpact(impact, impactSpeed);
+          if (res.knock && res.knock.speed > 1) knock = this.startKnock(res.knock.seat, res.knock.speed, frames);
+          for (const uid of res.remove) {
             frames.gone[uid] = frames.count;
             this.removeDefense(uid);
           }
@@ -328,10 +447,11 @@ export class PhysicsWorld {
         }
         if (step % ARENA.frameEvery === 0) {
           this.record(frames, last, projGone ? undefined : proj);
+          if (knock) this.recordKnock(knock, frames);
           fell.push(...this.removeFallen(frames));
         }
         if (projGone) {
-          restSteps = this.allAtRest() ? restSteps + 1 : 0;
+          restSteps = this.allAtRest() && (!knock || knock.done) ? restSteps + 1 : 0;
           if (restSteps > 24) break;
         }
       }
@@ -339,8 +459,13 @@ export class PhysicsWorld {
       Events.off(this.engine, 'collisionStart', onCollide);
       if (!projGone) Composite.remove(this.engine.world, proj);
     }
+    if (knock && !knock.done) {
+      // 安全措施：時間到還沒停就直接站好
+      this.moveChar(knock.seat, knock.x);
+      knock.done = true;
+    }
     fell.push(...this.removeFallen(frames));
     if (impactFrame < 0) impactFrame = Math.max(0, frames.count - 1);
-    return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell };
+    return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell, impactSpeed };
   }
 }

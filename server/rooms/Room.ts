@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import { getCharacter } from '../../shared/config/characters.js';
-import { GAME_CONFIG } from '../../shared/config/game.js';
+import { ARENA, GAME_CONFIG } from '../../shared/config/game.js';
 import type {
   ClientToServerEvents,
   ErrorCode,
@@ -202,6 +202,7 @@ export class Room {
         hp: f?.hp ?? maxHp,
         maxHp,
         statuses: f ? f.statuses.map((s) => ({ ...s })) : [],
+        x: f?.x ?? ARENA.characterStartX[p.seat],
       };
     }) as RoomSnapshot['players'];
     return {

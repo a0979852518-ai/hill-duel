@@ -4,7 +4,7 @@
 import * as Phaser from 'phaser';
 import { ARENA } from '../../../../shared/config/game.js';
 import { getItem, ITEMS, type DefenseDef } from '../../../../shared/config/items.js';
-import { defenseRect, launchPoint } from '../../../../shared/physics.js';
+import { defenseRect, launchPoint, placementZone } from '../../../../shared/physics.js';
 import type { DefenseView, Seat } from '../../../../shared/types.js';
 import { iconKey } from '../../game/assets.js';
 import { FONT } from './effects.js';
@@ -14,9 +14,12 @@ import type { ItemDef } from '../../../../shared/config/items.js';
 import { HIDDEN_ICON } from '../../game/assets.js';
 
 function kindLabel(item: ItemDef): string {
-  if (item.kind === 'throwable') return '投擲攻擊';
+  if (item.kind === 'throwable') return item.weightKg ? `投擲攻擊 · ${fmtKg(item.weightKg)}` : '投擲攻擊';
   if (item.kind === 'defense') return '防禦';
   return item.role === 'defense' ? '功能防禦' : '功能攻擊';
+}
+function fmtKg(kg: number): string {
+  return kg >= 0.1 ? `${kg}kg` : `${Math.round(kg * 1000)}g`;
 }
 function kindColor(item: ItemDef): number {
   if (item.kind === 'throwable') return 0xe8743b;
@@ -209,14 +212,17 @@ export class AimDisplay {
   private hint: Phaser.GameObjects.Text;
   visible = false;
 
-  constructor(private scene: Phaser.Scene) {
+  constructor(
+    private scene: Phaser.Scene,
+    ui: Phaser.Scene,
+  ) {
     this.g = scene.add.graphics().setDepth(40);
     this.label = scene.add
       .text(0, 0, '', { fontFamily: FONT, fontSize: '18px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 6 })
       .setOrigin(0.5)
       .setDepth(41);
-    this.hint = scene.add
-      .text(CX, 230, '', { fontFamily: FONT, fontSize: '22px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 6, align: 'center' })
+    this.hint = ui.add
+      .text(CX, 190, '', { fontFamily: FONT, fontSize: '22px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 6, align: 'center' })
       .setOrigin(0.5)
       .setDepth(41);
     this.hide();
@@ -230,7 +236,7 @@ export class AimDisplay {
    * 畫瞄準箭頭與蓄力環
    * @param power null = 還沒開始蓄力
    */
-  draw(seat: Seat, angle: number | null, power: number | null): void {
+  draw(seat: Seat, feetX: number, angle: number | null, power: number | null): void {
     this.visible = true;
     const g = this.g;
     g.clear();
@@ -238,7 +244,7 @@ export class AimDisplay {
       this.label.setVisible(false);
       return;
     }
-    const lp = launchPoint(seat);
+    const lp = launchPoint(seat, feetX);
     const dir = seat === 0 ? 1 : -1;
     const rad = Phaser.Math.DegToRad(angle);
     const ux = Math.cos(rad) * dir,
@@ -282,16 +288,14 @@ export class AimDisplay {
 // ------------------------------------------------------------ 防禦放置（拖到想放的位置，放開就掉下去）
 
 export class PlacementOverlay {
-  private zones: Phaser.GameObjects.Rectangle[];
+  private zone: Phaser.GameObjects.Rectangle;
   private ghost: Phaser.GameObjects.Image;
   private dropLine: Phaser.GameObjects.Graphics;
   private hint: Phaser.GameObjects.Text;
   private handlers: [string, (p: Phaser.Input.Pointer) => void][] = [];
 
   constructor(private scene: Phaser.Scene) {
-    this.zones = ARENA.placementZones.map((z) =>
-      scene.add.rectangle(z.x, z.y, z.w, z.h, 0xffffff, 0.12).setOrigin(0, 0).setDepth(30).setStrokeStyle(3, 0xffffff, 0.8).setVisible(false),
-    );
+    this.zone = scene.add.rectangle(0, 0, 10, 10, 0xffffff, 0.12).setOrigin(0, 0).setDepth(30).setStrokeStyle(3, 0xffffff, 0.8).setVisible(false);
     this.ghost = scene.add.image(0, 0, '__WHITE').setDepth(31).setAlpha(0.6).setVisible(false);
     this.dropLine = scene.add.graphics().setDepth(30);
     this.hint = scene.add
@@ -303,16 +307,19 @@ export class PlacementOverlay {
 
   show(
     seat: Seat,
+    feetX: number,
     item: DefenseDef,
     interactive: boolean,
     existing: DefenseView[],
     textureKey: string,
     touch: boolean,
     onPlace: (x: number, y: number) => void,
+    toWorld: (p: Phaser.Input.Pointer) => { x: number; y: number },
   ): void {
     this.hide();
-    const z = ARENA.placementZones[seat];
-    const zone = this.zones[seat].setVisible(true);
+    const z = placementZone(seat, feetX);
+    const zone = this.zone.setPosition(z.x, z.y).setSize(z.w, z.h).setVisible(true);
+    zone.setDisplaySize(z.w, z.h);
     this.scene.tweens.add({ targets: zone, alpha: { from: 0.55, to: 1 }, yoyo: true, repeat: -1, duration: 650 });
     this.hint
       .setPosition(z.x + z.w / 2, z.y - 6)
@@ -339,26 +346,28 @@ export class PlacementOverlay {
     let dragging = false;
     const move = (p: Phaser.Input.Pointer) => {
       if (touch && !dragging) return;
-      const x = p.worldX,
-        y = p.worldY;
+      const { x, y } = toWorld(p);
       const ok = valid(x, y);
       this.ghost.setPosition(x, y).setVisible(true).setTint(ok ? 0xffffff : 0xff5252);
       // 往下畫一條落下的參考線
       this.dropLine.clear();
       if (ok) {
         this.dropLine.lineStyle(2, 0xffffff, 0.6);
-        for (let yy = y + item.size.h / 2 + 6; yy < 520; yy += 14) this.dropLine.lineBetween(x, yy, x, Math.min(520, yy + 7));
+        const gy = ARENA.groundY;
+        for (let yy = y + item.size.h / 2 + 6; yy < gy; yy += 14) this.dropLine.lineBetween(x, yy, x, Math.min(gy, yy + 7));
       }
     };
     const down = (p: Phaser.Input.Pointer) => {
       dragging = true;
       move(p);
-      if (!touch && valid(p.worldX, p.worldY)) onPlace(Math.round(p.worldX), Math.round(p.worldY));
+      const w = toWorld(p);
+      if (!touch && valid(w.x, w.y)) onPlace(Math.round(w.x), Math.round(w.y));
     };
     const up = (p: Phaser.Input.Pointer) => {
       if (!touch || !dragging) return;
       dragging = false;
-      if (valid(p.worldX, p.worldY)) onPlace(Math.round(p.worldX), Math.round(p.worldY));
+      const w = toWorld(p);
+      if (valid(w.x, w.y)) onPlace(Math.round(w.x), Math.round(w.y));
     };
     this.handlers = [
       ['pointermove', move],
@@ -369,10 +378,8 @@ export class PlacementOverlay {
   }
 
   hide(): void {
-    for (const z of this.zones) {
-      this.scene.tweens.killTweensOf(z);
-      z.setVisible(false).setAlpha(1);
-    }
+    this.scene.tweens.killTweensOf(this.zone);
+    this.zone.setVisible(false).setAlpha(1);
     this.ghost.setVisible(false);
     this.dropLine.clear();
     this.hint.setVisible(false);
@@ -387,9 +394,12 @@ export class TargetOverlay {
   private marks: Phaser.GameObjects.GameObject[] = [];
   private hint: Phaser.GameObjects.Text;
 
-  constructor(private scene: Phaser.Scene) {
-    this.hint = scene.add
-      .text(CX, 230, '', { fontFamily: FONT, fontSize: '22px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 6, align: 'center' })
+  constructor(
+    private scene: Phaser.Scene,
+    ui: Phaser.Scene,
+  ) {
+    this.hint = ui.add
+      .text(CX, 190, '', { fontFamily: FONT, fontSize: '22px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 6, align: 'center' })
       .setOrigin(0.5)
       .setDepth(62)
       .setVisible(false);

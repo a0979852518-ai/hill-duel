@@ -58,13 +58,13 @@ export function puff(scene: Phaser.Scene, x: number, y: number): void {
   }
 }
 
-export function damageNumber(scene: Phaser.Scene, seat: Seat, amount: number, color = '#ffffff', label?: string, sign = '-'): void {
-  const box = characterHitbox(seat);
+export function damageNumber(scene: Phaser.Scene, feetX: number, amount: number, color = '#ffffff', label?: string, sign = '-', big = false): void {
+  const box = characterHitbox(feetX);
   const x = box.x + box.w / 2 + Phaser.Math.Between(-14, 14);
   const t = scene.add
     .text(x, box.y - 6, label ? `${label} ${sign}${amount}` : `${sign}${amount}`, {
       fontFamily: FONT,
-      fontSize: '34px',
+      fontSize: big ? '46px' : '34px',
       fontStyle: '900',
       color,
       stroke: '#2b2118',
@@ -74,6 +74,7 @@ export function damageNumber(scene: Phaser.Scene, seat: Seat, amount: number, co
     .setDepth(80)
     .setScale(0.4);
   scene.tweens.add({ targets: t, scale: 1, duration: 160, ease: 'Back.easeOut' });
+  if (big) scene.tweens.add({ targets: t, angle: { from: -12, to: 0 }, duration: 260, ease: 'Back.easeOut' });
   scene.tweens.add({ targets: t, y: t.y - 70, alpha: 0, delay: 650, duration: 650, onComplete: () => t.destroy() });
 }
 
@@ -114,12 +115,13 @@ export function banner(scene: Phaser.Scene, text: string, color = 0xe8743b, ms =
   });
 }
 
-export function lightningStrike(scene: Phaser.Scene, seat: Seat): Promise<void> {
-  const box = characterHitbox(seat);
+export function lightningStrike(scene: Phaser.Scene, feetX: number): Promise<void> {
+  const box = characterHitbox(feetX);
+  const view = scene.cameras.main.worldView;
   const x = box.x + box.w / 2;
   const g = scene.add.graphics().setDepth(70);
-  const pts: [number, number][] = [[x + Phaser.Math.Between(-40, 40), 0]];
-  for (let y = 60; y < box.y + box.h / 2; y += 60) pts.push([x + Phaser.Math.Between(-30, 30), y]);
+  const pts: [number, number][] = [[x + Phaser.Math.Between(-40, 40), view.y]];
+  for (let y = view.y + 60; y < box.y + box.h / 2; y += 60) pts.push([x + Phaser.Math.Between(-30, 30), y]);
   pts.push([x, box.y + box.h / 2]);
   const draw = (w: number, c: number) => {
     g.lineStyle(w, c);
@@ -130,7 +132,7 @@ export function lightningStrike(scene: Phaser.Scene, seat: Seat): Promise<void> 
   };
   draw(12, 0xfff59d);
   draw(4, 0xffffff);
-  const flash = scene.add.rectangle(ARENA.width / 2, ARENA.height / 2, ARENA.width, ARENA.height, 0xffffff, 0.6).setDepth(69);
+  const flash = scene.add.rectangle(view.centerX, view.centerY, view.width * 1.5, view.height * 1.5, 0xffffff, 0.6).setDepth(69);
   scene.cameras.main.shake(180, 0.006);
   return new Promise((resolve) => {
     scene.tweens.add({ targets: [g, flash], alpha: 0, duration: 450, delay: 120, onComplete: () => (g.destroy(), flash.destroy(), resolve()) });
@@ -160,22 +162,22 @@ export function hammerSmash(scene: Phaser.Scene, d: DefenseView): Promise<void> 
 /** 功能道具專屬動畫：key = handler 名稱 */
 export const FUNCTIONAL_EFFECTS: Record<
   string,
-  (scene: Phaser.Scene, ctx: { seat: Seat; enemy: Seat; target?: DefenseView; itemId: string }) => Promise<void>
+  (scene: Phaser.Scene, ctx: { seat: Seat; enemy: Seat; target?: DefenseView; itemId: string; xOf: (seat: Seat) => number }) => Promise<void>
 > = {
-  directDamage: (scene, { enemy }) => lightningStrike(scene, enemy),
+  directDamage: (scene, { enemy, xOf }) => lightningStrike(scene, xOf(enemy)),
   destroyDefense: (scene, { target }) => (target ? hammerSmash(scene, target) : Promise.resolve()),
-  damageBoth: async (scene, { seat, enemy }) => {
-    const a = characterHitbox(enemy),
-      b = characterHitbox(seat);
+  damageBoth: async (scene, { seat, enemy, xOf }) => {
+    const a = characterHitbox(xOf(enemy)),
+      b = characterHitbox(xOf(seat));
     await Promise.all([explosion(scene, a.x + a.w / 2, a.y + a.h / 2, 90), explosion(scene, b.x + b.w / 2, b.y + b.h / 2, 90)]);
   },
-  applyStatus: (scene, { seat, enemy, itemId }) => aura(scene, itemId === 'whey' ? seat : enemy, itemId === 'whey' ? 0xff7043 : 0xab47bc),
-  heal: (scene, { seat }) => aura(scene, seat, 0x69f0ae),
+  applyStatus: (scene, { seat, enemy, itemId, xOf }) => aura(scene, xOf(itemId === 'whey' ? seat : enemy), itemId === 'whey' ? 0xff7043 : 0xab47bc),
+  heal: (scene, { seat, xOf }) => aura(scene, xOf(seat), 0x69f0ae),
 };
 
 /** 角色周圍冒出一圈光（狀態、回血） */
-export function aura(scene: Phaser.Scene, seat: Seat, color: number): Promise<void> {
-  const box = characterHitbox(seat);
+export function aura(scene: Phaser.Scene, feetX: number, color: number): Promise<void> {
+  const box = characterHitbox(feetX);
   const cx = box.x + box.w / 2,
     cy = box.y + box.h / 2;
   for (let i = 0; i < 14; i++) {
@@ -185,5 +187,44 @@ export function aura(scene: Phaser.Scene, seat: Seat, color: number): Promise<vo
   const ring = scene.add.ellipse(cx, cy, 120, 190, color, 0.25).setDepth(59).setScale(0.3);
   return new Promise((resolve) => {
     scene.tweens.add({ targets: ring, scale: 1, alpha: 0, duration: 800, onComplete: () => (ring.destroy(), resolve()) });
+  });
+}
+
+/** 命中瞬間的衝擊：放射狀白線＋圓環（力道越大越誇張） */
+export function impactBurst(scene: Phaser.Scene, x: number, y: number, strength: number): void {
+  const n = 8 + Math.round(strength * 8);
+  const g = scene.add.graphics().setDepth(53);
+  const rays = Array.from({ length: n }, () => ({ a: Math.random() * Math.PI * 2, l: 30 + Math.random() * 50 * (0.6 + strength) }));
+  const ring = scene.add.circle(x, y, 20, 0xffffff, 0).setStrokeStyle(6, 0xffffff, 0.9).setDepth(53);
+  scene.tweens.add({ targets: ring, scale: 2.4 + strength * 2, alpha: 0, duration: 320, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
+  scene.tweens.addCounter({
+    from: 0,
+    to: 1,
+    duration: 260,
+    onUpdate: (tw) => {
+      const v = tw.getValue() ?? 0;
+      g.clear();
+      g.lineStyle(5 * (1 - v) + 1, 0xffffff, 1 - v);
+      for (const r of rays) {
+        const d0 = 18 + r.l * v,
+          d1 = d0 + r.l * (1 - v * 0.6);
+        g.lineBetween(x + Math.cos(r.a) * d0, y + Math.sin(r.a) * d0, x + Math.cos(r.a) * d1, y + Math.sin(r.a) * d1);
+      }
+    },
+    onComplete: () => g.destroy(),
+  });
+}
+
+/** 被擊退滑行時腳下揚起的塵土 */
+export function dust(scene: Phaser.Scene, x: number, y: number, dir: number): void {
+  const c = scene.add.circle(x, y, 5 + Math.random() * 5, 0xd7c4a3, 0.8).setDepth(19);
+  scene.tweens.add({
+    targets: c,
+    x: x - dir * (10 + Math.random() * 30),
+    y: y - 8 - Math.random() * 22,
+    scale: 2.2,
+    alpha: 0,
+    duration: 500,
+    onComplete: () => c.destroy(),
   });
 }

@@ -148,14 +148,14 @@ export class Hud {
     const t = snap.turn;
     if (!t) {
       this.turnText.setText('');
-      this.phaseText.setText('');
+      this.phaseText.setText('').setVisible(false);
       this.timerActive = false;
       return;
     }
     const activeName = snap.players[t.activeSeat]?.name ?? '';
     this.turnText.setText(t.activeSeat === mySeat ? '你的回合' : `${activeName} 的回合`);
     this.turnText.setColor(t.activeSeat === 0 ? '#bcd6ff' : '#ffc9c4');
-    this.phaseText.setText(PHASE_TEXT[t.phase] + (t.timer ? (t.timer.stage === 'draw' ? '（第一階段）' : '（第二階段）') : ''));
+    this.phaseText.setVisible(true).setText(PHASE_TEXT[t.phase] + (t.timer ? (t.timer.stage === 'draw' ? '（第一階段）' : '（第二階段）') : ''));
     if (t.timer) {
       this.timerActive = true;
       this.timerEnd = receivedAt + t.timer.remainingMs;

@@ -2,8 +2,8 @@
 // 全部在伺服器上計算，客戶端只負責播放結果。
 
 import type { ThrowableDef } from '../../shared/config/items.js';
-import { ARENA } from '../../shared/config/game.js';
-import { characterHitbox, distPointRect } from '../../shared/physics.js';
+import { KNOCKBACK } from '../../shared/config/game.js';
+import { characterHitbox, distPointRect, headLineY } from '../../shared/physics.js';
 import type { BattleEvent, DamageEntry, DefenseUpdate, Seat } from '../../shared/types.js';
 import type { BattleState } from './BattleState.js';
 
@@ -18,8 +18,9 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
   let statusApplied: ThrowEvent['statusApplied'] = null;
   const enemy: Seat = seat === 0 ? 1 : 0;
 
-  const sim = state.physics.throwProjectile(seat, item, angle, power, (impact) => {
+  const sim = state.physics.throwProjectile(seat, item, angle, power, (impact, impactSpeed) => {
     const destroyedNow: string[] = [];
+    let knock: { seat: Seat; speed: number } | undefined;
 
     // 1) 撞到防禦道具：扣耐久/次數，記下減傷比例
     let reductionFor: Seat | null = null;
@@ -47,13 +48,15 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
         amount = item.damage;
         source = 'direct';
         // 打到頭（身體上緣以上）傷害 ×1.5，可再和其他倍率（精神傷害、乳清…）相乘
-        const torsoTop = ARENA.characterFeet[target].y - ARENA.characterBody.torsoH;
-        if (impact.y < torsoTop) {
+        if (impact.y < headLineY()) {
           amount *= HEADSHOT_MULTIPLIER;
           headshot = true;
         }
+        // 擊退：越重、越快的東西推得越遠
+        const kb = KNOCKBACK.k * Math.sqrt(item.weightKg ?? 0.5) * (impactSpeed / 1500) * (headshot ? KNOCKBACK.headshotBonus : 1);
+        knock = { seat: target, speed: kb };
       } else if (item.explosionRadius > 0 && impact.kind !== 'out') {
-        const dist = distPointRect(impact.x, impact.y, characterHitbox(target));
+        const dist = distPointRect(impact.x, impact.y, characterHitbox(state.physics.getCharX(target)));
         if (dist <= item.explosionRadius) {
           const falloff = 1 - (dist / item.explosionRadius) * 0.5; // 越靠近爆心越痛：邊緣剩 50%
           amount = item.damage * item.splashMultiplier * falloff;
@@ -74,8 +77,9 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
       state.applyStatus(enemy, item.onHitStatus.statusId, item.onHitStatus.turns);
       statusApplied = { seat: enemy, statusId: item.onHitStatus.statusId, turns: item.onHitStatus.turns };
     }
-    return destroyedNow;
+    return { remove: destroyedNow, knock };
   });
+  state.syncCharacters();
 
   // 被撞下平台的防禦道具
   defenseUpdates.push(...state.dropFallen(sim.fell));
