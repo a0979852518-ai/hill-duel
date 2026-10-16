@@ -25,7 +25,7 @@ def cutout(src, dst, max_side=480, flip=False, thresh=232, keep=None, holes=Fals
     bg = np.isin(lab, list(border))
     if holes:
         # 被主體包住、面積夠大且非常白的區塊也當背景（字樣這種小區塊不會被挖掉）
-        very_white = (mn >= 240) & (mx - mn <= 12)
+        very_white = (mn >= max(240, thresh - 2)) & (mx - mn <= 12)
         lab_h, nh = ndimage.label(very_white & ~bg)
         if nh:
             sizes = ndimage.sum(np.ones_like(lab_h), lab_h, range(1, nh + 1))

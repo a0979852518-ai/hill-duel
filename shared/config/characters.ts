@@ -63,6 +63,20 @@ export const CHARACTERS: CharacterDef[] = [
     },
     placeholder: { color: 0xbdb6aa, accent: 0xf1d3b8 },
   },
+  {
+    id: 'yebingcheng',
+    name: '葉柄承',
+    maxHp: 100,
+    description: '架式十足的投擲新秀。',
+    portrait: 'assets/characters/yebingcheng/portrait.png',
+    poses: {
+      idle: 'assets/characters/yebingcheng/idle.png',
+      throw: 'assets/characters/yebingcheng/throw.png',
+      hurt: 'assets/characters/yebingcheng/hurt.png',
+      dead: 'assets/characters/yebingcheng/dead.png',
+    },
+    placeholder: { color: 0xe8e6ea, accent: 0xf1d3b8 },
+  },
 
   // ---- 以下是最早的臨時角色（沒有照片），先關閉；改成 enabled: true 就會回到選角畫面 ----
   {
