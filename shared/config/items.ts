@@ -59,6 +59,8 @@ export interface ThrowableDef extends ItemBase {
   gravityScale: number;
   /** 擊退力道額外倍率（預設 1） */
   knockScale?: number;
+  /** 打中人之後黏在身上（純裝飾，不影響任何數值） */
+  sticky?: boolean;
   /** 空氣阻力（0 = 沒有；輕的東西大，飛一飛就慢下來），預設 0 */
   frictionAir?: number;
   /** 飛行時的旋轉速度（弧度/格），預設 0.25 */
@@ -222,6 +224,28 @@ export const ITEMS: ItemDef[] = [
     radius: 20,
     spin: 0.22,
     explosionRadius: 30,
+    splashMultiplier: 0.5,
+  },
+  {
+    id: 'poopoo',
+    kind: 'throwable',
+    name: 'poopoo恩',
+    description: '命中傷害 10。砸到人會黏在身上，一直黏到死掉為止；砸到黏著的便便上會一坨坨疊起來（純噁心，沒有其他效果）。',
+    icon: 'assets/items/poopoo.png',
+    sprite: 'assets/items/poopoo.png',
+    placeholder: { shape: 'circle', color: 0x8b542d },
+    tags: ['light'],
+    damage: 10,
+    // 軟軟一坨，約 0.25 公斤
+    weightKg: 0.25,
+    frictionAir: 0.0012,
+    minSpeed: 400,
+    maxSpeed: 2400,
+    gravityScale: 1,
+    radius: 14,
+    spin: 0.18,
+    sticky: true,
+    explosionRadius: 24,
     splashMultiplier: 0.5,
   },
   {

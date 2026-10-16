@@ -235,6 +235,7 @@ export class Room {
         maxHp,
         statuses: f ? f.statuses.map((s) => ({ ...s })) : [],
         x: f?.x ?? ARENA.characterStartX[p.seat],
+        ...(f && f.stuck.length ? { stuck: f.stuck.map((s) => ({ ...s })) } : {}),
         ...(p.bot ? { bot: p.bot } : {}),
       };
     }) as RoomSnapshot['players'];

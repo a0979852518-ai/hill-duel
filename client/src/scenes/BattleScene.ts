@@ -232,6 +232,7 @@ export class BattleScene extends Phaser.Scene {
       this.hud.setHp(p.seat, p.hp, animate);
       const c = this.chars[p.seat];
       if (c && Math.abs(c.x - p.x) > 0.5) c.placeAt(p.x);
+      c?.setStuck(p.stuck ?? []);
     });
     const seen = new Set<string>();
     for (const d of snap.defenses) {
@@ -718,6 +719,11 @@ export class BattleScene extends Phaser.Scene {
         if (k !== e.impactFrame) return;
         flying = false;
         this.speedLines.stop();
+        // 黏住了：投擲物本身消失，換成黏在身上的那坨
+        if (e.stuck) {
+          proj.setAlpha(0);
+          this.chars[e.stuck.seat]?.addStuck(e.stuck.item);
+        }
         this.showImpact(e);
       },
     });

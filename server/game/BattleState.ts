@@ -3,7 +3,7 @@
 
 import { ARENA } from '../../shared/config/game.js';
 import { getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
-import type { DamageEntry, DefenseUpdate, DefenseView, HealEntry, Seat, StatusView } from '../../shared/types.js';
+import type { DamageEntry, DefenseUpdate, DefenseView, HealEntry, Seat, StatusView, StuckItem } from '../../shared/types.js';
 import { PhysicsWorld } from './PhysicsWorld.js';
 
 export interface FighterState {
@@ -13,6 +13,8 @@ export interface FighterState {
   statuses: StatusView[];
   /** 腳底 x（被擊退會改變） */
   x: number;
+  /** 黏在身上的便便（純裝飾） */
+  stuck: StuckItem[];
 }
 
 export interface DefenseState extends DefenseView {
@@ -29,8 +31,8 @@ export class BattleState {
 
   constructor(maxHp: [number, number]) {
     this.fighters = [
-      { seat: 0, hp: maxHp[0], maxHp: maxHp[0], statuses: [], x: ARENA.characterStartX[0] },
-      { seat: 1, hp: maxHp[1], maxHp: maxHp[1], statuses: [], x: ARENA.characterStartX[1] },
+      { seat: 0, hp: maxHp[0], maxHp: maxHp[0], statuses: [], x: ARENA.characterStartX[0], stuck: [] },
+      { seat: 1, hp: maxHp[1], maxHp: maxHp[1], statuses: [], x: ARENA.characterStartX[1], stuck: [] },
     ];
   }
 
@@ -59,6 +61,39 @@ export class BattleState {
     const f = this.fighters[seat];
     f.hp = Math.max(0, f.hp - dmg);
     return { seat, amount: dmg, hpAfter: f.hp, source, ...(statusId ? { statusId } : {}) };
+  }
+
+  /**
+   * 黏一坨在身上：impactX/Y 是世界座標的命中點，feetX 是被打中當下的腳底位置。
+   * 跟已經黏著的便便重疊 → 黏在那坨上面（往外疊出去）。
+   */
+  stick(seat: Seat, itemId: string, impactX: number, impactY: number, feetX: number): StuckItem {
+    const facing = seat === 0 ? 1 : -1;
+    const R = 12; // 黏著時的半徑（畫面上約 28px 大）
+    let x = Math.max(-22, Math.min(22, (impactX - feetX) * facing));
+    let y = Math.max(8, Math.min(ARENA.characterHitbox.h + 6, ARENA.groundY - impactY));
+    let rot = (Math.random() - 0.5) * 0.8;
+    const list = this.fighters[seat].stuck;
+    // 疊起來：一直往外推，直到不跟任何一坨重疊
+    for (let guard = 0; guard < 12; guard++) {
+      const hit = list.find((s) => Math.hypot(s.x - x, s.y - y) < R * 1.7);
+      if (!hit) break;
+      let dx = x - hit.x,
+        dy = y - hit.y;
+      const len = Math.hypot(dx, dy);
+      // 正好疊在同一點：往外（面向對手那側）稍微往上疊
+      if (len < 1) {
+        dx = 0.8;
+        dy = 0.6;
+      }
+      const l2 = Math.hypot(dx, dy);
+      x = hit.x + (dx / l2) * R * 1.75;
+      y = hit.y + (dy / l2) * R * 1.75;
+      rot = Math.atan2(dx / l2, dy / l2) * 0.6; // 往外歪
+    }
+    const item: StuckItem = { itemId, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, rot: Math.round(rot * 100) / 100 };
+    list.push(item);
+    return item;
   }
 
   heal(seat: Seat, amount: number): HealEntry | null {

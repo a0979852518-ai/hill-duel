@@ -201,7 +201,7 @@ export class AiPlayer {
     const p = this.profile;
     let best = { angle: 40, power: 0.85, score: -Infinity };
     /** 每個角度找到的命中力道 */
-    const hits: { angle: number; power: number }[] = [];
+    const hits: { angle: number; power: number; direct: boolean }[] = [];
     const lo = 12,
       hi = 62;
     for (let i = 0; i < p.angles; i++) {
@@ -214,9 +214,11 @@ export class AiPlayer {
         const r = this.trial(item, angle, power);
         const score = this.scoreTrial(r, foe, foeX);
         if (score > best.score) best = { angle, power, score };
-        if (score >= 500 && !found) {
+        // 每個角度記一個命中力道（有直接命中就換掉彈地命中）
+        if (score >= 500 && (!found || (score >= 900 && !hits[hits.length - 1].direct))) {
+          if (found) hits.pop();
           found = true;
-          hits.push({ angle, power });
+          hits.push({ angle, power, direct: score >= 900 });
         }
         // 落點在對手前面（或撞到防禦）→ 要更大力；過頭 → 小力一點
         const short = r.kind === 'out' ? false : (r.x - foeX) * dir < 0;
@@ -226,8 +228,12 @@ export class AiPlayer {
     }
     // 打得中的角度裡，挑「力道容許誤差最大」的，並瞄在命中範圍的正中間（比較穩）
     let bestWidth = -1;
+    // 有直接命中的就不考慮彈地命中（彈一次傷害減半）
+    const direct = hits.filter((h) => h.direct);
+    const pool = direct.length ? direct : hits;
+    const thr = direct.length ? 900 : 400;
     // 候選太多時平均挑幾個就好（省運算）
-    const pick = hits.length > 6 ? hits.filter((_, i) => i % Math.ceil(hits.length / 6) === 0) : hits;
+    const pick = pool.length > 6 ? pool.filter((_, i) => i % Math.ceil(pool.length / 6) === 0) : pool;
     for (const h of pick) {
       const step = 0.004;
       let lo2 = h.power,
@@ -235,13 +241,13 @@ export class AiPlayer {
       let headHits = 0;
       for (let q = h.power - step; q > h.power - 0.08; q -= step) {
         const r = this.trial(item, h.angle, q);
-        if (this.scoreTrial(r, foe, foeX) < 500) break;
+        if (this.scoreTrial(r, foe, foeX) < thr) break;
         if (r.y < headLineY()) headHits++;
         lo2 = q;
       }
       for (let q = h.power + step; q < h.power + 0.08 && q <= 1; q += step) {
         const r = this.trial(item, h.angle, q);
-        if (this.scoreTrial(r, foe, foeX) < 500) break;
+        if (this.scoreTrial(r, foe, foeX) < thr) break;
         if (r.y < headLineY()) headHits++;
         hi2 = q;
       }

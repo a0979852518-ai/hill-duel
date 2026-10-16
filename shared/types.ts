@@ -45,8 +45,21 @@ export interface PlayerView {
   statuses: StatusView[];
   /** 角色腳底目前的 x（會被擊退而改變） */
   x: number;
+  /** 黏在身上的東西（poopoo恩），純裝飾 */
+  stuck?: StuckItem[];
   /** 電腦玩家的難度（真人沒有） */
   bot?: AiDifficulty;
+}
+
+/**
+ * 黏在角色身上的東西：位置以「站姿」為準，相對腳底。
+ * x = 往面向對手那側的距離（右方玩家會鏡像），y = 離地高度（正 = 往上），rot = 角度
+ */
+export interface StuckItem {
+  itemId: string;
+  x: number;
+  y: number;
+  rot: number;
 }
 
 /** 電腦玩家難度：弱 / 中 / 強 / 夢魘 */
@@ -173,6 +186,8 @@ export type BattleEvent =
       statusApplied: { seat: Seat; statusId: string; turns: number } | null;
       /** 投擲物落地彈跳的格數 */
       bounceFrames?: number[];
+      /** 這次黏到誰身上（poopoo恩） */
+      stuck?: { seat: Seat; item: StuckItem };
     }
   | { type: 'defensePlaced'; seat: Seat; defense: DefenseView; frames: PhysicsFrames; fell: DefenseUpdate[] }
   | { type: 'settle'; frames: PhysicsFrames; fell: DefenseUpdate[] }

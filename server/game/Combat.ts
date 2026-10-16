@@ -17,6 +17,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
   const damages: DamageEntry[] = [];
   const defenseUpdates: DefenseUpdate[] = [];
   let statusApplied: ThrowEvent['statusApplied'] = null;
+  let stuck: ThrowEvent['stuck'];
   const enemy: Seat = seat === 0 ? 1 : 0;
 
   const sim = state.physics.throwProjectile(seat, item, angle, power, (impact, impactSpeed, impactVel) => {
@@ -43,6 +44,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
 
     // 2) 角色傷害：直擊 or 爆炸波及（自己的爆炸也可能炸到自己）
     const hitSeats: Seat[] = [];
+    let stickAt: { seat: Seat; x: number; y: number; feetX: number } | null = null;
     for (const target of [0, 1] as Seat[]) {
       let amount = 0;
       let source: DamageEntry['source'] = 'splash';
@@ -63,6 +65,8 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
         // 擊退特別強的道具（快煮鍋）上限也跟著放大
         knockSpeed = Math.min(KNOCKBACK.maxSpeed * Math.max(1, item.knockScale ?? 1), (item.knockScale ?? 1) * KNOCKBACK.k * Math.sqrt(item.weightKg ?? 0.5) * (impactSpeed / 1500) * (headshot ? KNOCKBACK.headshotBonus : 1));
         knockSeat = target;
+        // 黏在身上（poopoo恩）：記下命中點相對腳底的位置
+        if (item.sticky) stickAt = { seat: target, x: impact.x, y: impact.y, feetX: state.physics.getCharX(target) };
       } else if (item.explosionRadius > 0 && impact.kind !== 'out') {
         const dist = distPointRect(impact.x, impact.y, characterHitbox(state.physics.getCharX(target)));
         if (dist <= item.explosionRadius) {
@@ -79,6 +83,11 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
         damages.push(entry);
         hitSeats.push(target);
       }
+    }
+
+    // 被打死的人不用黏了（死掉就會消失）
+    if (stickAt && state.fighters[stickAt.seat].hp > 0) {
+      stuck = { seat: stickAt.seat, item: state.stick(stickAt.seat, item.id, stickAt.x, stickAt.y, stickAt.feetX) };
     }
 
     // 擊退（傷害算完才知道會不會被打死 → 打死就躺著不起來）
@@ -123,6 +132,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     defenseUpdates,
     statusApplied,
     bounceFrames: sim.bounceFrames,
+    ...(stuck ? { stuck } : {}),
   };
 }
 
