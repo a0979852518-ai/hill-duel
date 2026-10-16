@@ -50,7 +50,7 @@ export interface ThrowableDef extends ItemBase {
   damage: number;
   /** 對防禦道具耐久度造成的傷害（不填 = damage） */
   structureDamage?: number;
-  /** 力道 0% / 100% 對應的初速（像素/秒） */
+  /** 力道 0% / 100% 對應的初速（像素/秒）；重力是 ARENA.gravity × gravityScale */
   minSpeed: number;
   maxSpeed: number;
   /** 重力倍率：越大掉越快 */
@@ -65,11 +65,24 @@ export interface ThrowableDef extends ItemBase {
   onHitStatus?: StatusApply;
 }
 
+/**
+ * 防禦道具的物理外型（碰撞箱）
+ *  box     實心長方形（大小 = size）
+ *  helmet  倒 U 形外殼：上蓋＋兩側，下方是凹槽，可以卡在頭上
+ */
+export type DefenseBody = { kind: 'box' } | { kind: 'helmet'; wall: number; cap: number };
+
 export interface DefenseDef extends ItemBase {
   kind: 'defense';
   /** 放在場上時的圖片（會被拉伸成 size 大小；不填就用 placeholder 顏色畫方塊） */
   sprite?: string;
   size: { w: number; h: number };
+  /** 碰撞外型，預設 box */
+  body?: DefenseBody;
+  /** 密度（越大越重、越不容易被撞倒），預設看 PHYSICS.defense.density */
+  density?: number;
+  /** 摩擦力（越大越不會滑），預設 PHYSICS.defense.friction */
+  friction?: number;
   /** 耐久度；null = 不看耐久，只看 maxHits */
   durability: number | null;
   /** 最多可承受幾次攻擊；null = 不限 */
@@ -100,8 +113,8 @@ export type ItemDef = ThrowableDef | DefenseDef | FunctionalDef;
 
 /** 投擲物共用手感 */
 const STANDARD_THROW = {
-  minSpeed: 320,
-  maxSpeed: 980,
+  minSpeed: 380,
+  maxSpeed: 1380,
   gravityScale: 1,
   radius: 11,
   explosionRadius: 30,
@@ -178,11 +191,13 @@ export const ITEMS: ItemDef[] = [
     id: 'helmet',
     kind: 'defense',
     name: '得咖咪咪的鋼盔',
-    description: '可以擋下 2 次投擲攻擊。',
+    description: '可以擋下 2 次投擲攻擊。有凹槽，可以直接戴到自己頭上。',
     icon: 'assets/items/helmet.png',
     sprite: 'assets/items/helmet.png',
     placeholder: { shape: 'rect', color: 0x5b6b3a },
     size: { w: 84, h: 53 },
+    body: { kind: 'helmet', wall: 11, cap: 18 },
+    density: 0.004,
     durability: null,
     maxHits: 2,
     damageReduction: 1,
@@ -198,6 +213,8 @@ export const ITEMS: ItemDef[] = [
     sprite: 'assets/items/fridge.png',
     placeholder: { shape: 'rect', color: 0xf5f5f5 },
     size: { w: 63, h: 110 },
+    density: 0.003,
+    friction: 0.6,
     durability: null,
     maxHits: 1,
     damageReduction: 1,
@@ -213,6 +230,8 @@ export const ITEMS: ItemDef[] = [
     sprite: 'assets/items/recycle.png',
     placeholder: { shape: 'rect', color: 0xb08d57 },
     size: { w: 78, h: 100 },
+    density: 0.0012,
+    friction: 0.9,
     durability: null,
     maxHits: 1,
     damageReduction: 1,

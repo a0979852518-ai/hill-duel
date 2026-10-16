@@ -2,7 +2,7 @@
 // 這些元件只負責「畫面」，真正的判定都在伺服器。
 
 import * as Phaser from 'phaser';
-import { AIM_CONFIG, ARENA } from '../../../../shared/config/game.js';
+import { ARENA } from '../../../../shared/config/game.js';
 import { getItem, ITEMS, type DefenseDef } from '../../../../shared/config/items.js';
 import { defenseRect, launchPoint } from '../../../../shared/physics.js';
 import type { DefenseView, Seat } from '../../../../shared/types.js';
@@ -206,89 +206,94 @@ export class ChoiceCards {
 export class AimDisplay {
   private g: Phaser.GameObjects.Graphics;
   private label: Phaser.GameObjects.Text;
-  private powerBg: Phaser.GameObjects.Rectangle;
-  private powerFill: Phaser.GameObjects.Rectangle;
-  private powerLabel: Phaser.GameObjects.Text;
+  private hint: Phaser.GameObjects.Text;
   visible = false;
 
-  constructor(scene: Phaser.Scene) {
+  constructor(private scene: Phaser.Scene) {
     this.g = scene.add.graphics().setDepth(40);
     this.label = scene.add
-      .text(0, 0, '', { fontFamily: FONT, fontSize: '20px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 6 })
+      .text(0, 0, '', { fontFamily: FONT, fontSize: '18px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 6 })
       .setOrigin(0.5)
       .setDepth(41);
-    this.powerBg = scene.add.rectangle(0, 0, 28, 160, 0x2b2118).setOrigin(0.5, 1).setDepth(41).setStrokeStyle(3, 0xffffff);
-    this.powerFill = scene.add.rectangle(0, 0, 20, 152, 0xe8743b).setOrigin(0.5, 1).setDepth(42);
-    this.powerLabel = scene.add
-      .text(0, 0, '力道', { fontFamily: FONT, fontSize: '14px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 4 })
+    this.hint = scene.add
+      .text(CX, 230, '', { fontFamily: FONT, fontSize: '22px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 6, align: 'center' })
       .setOrigin(0.5)
-      .setDepth(42);
+      .setDepth(41);
     this.hide();
   }
 
-  draw(seat: Seat, angle: number | null, power: number | null, angleLocked: boolean): void {
+  setHint(text: string): void {
+    this.hint.setText(text).setVisible(!!text);
+  }
+
+  /**
+   * 畫瞄準箭頭與蓄力環
+   * @param power null = 還沒開始蓄力
+   */
+  draw(seat: Seat, angle: number | null, power: number | null): void {
     this.visible = true;
     const g = this.g;
     g.clear();
+    if (angle === null) {
+      this.label.setVisible(false);
+      return;
+    }
     const lp = launchPoint(seat);
     const dir = seat === 0 ? 1 : -1;
-    // 角度扇形
-    const a0 = Phaser.Math.DegToRad(AIM_CONFIG.minAngle),
-      a1 = Phaser.Math.DegToRad(AIM_CONFIG.maxAngle);
-    g.fillStyle(0xffffff, 0.18);
-    g.slice(lp.x, lp.y, 120, dir > 0 ? -a1 : Math.PI + a0, dir > 0 ? -a0 : Math.PI + a1, false);
-    g.fillPath();
-    if (angle !== null) {
-      const rad = Phaser.Math.DegToRad(angle);
-      const len = 140;
-      const ex = lp.x + Math.cos(rad) * len * dir,
-        ey = lp.y - Math.sin(rad) * len;
-      g.lineStyle(8, 0x2b2118).lineBetween(lp.x, lp.y, ex, ey);
-      g.lineStyle(4, angleLocked ? 0x66bb6a : 0xffd54f).lineBetween(lp.x, lp.y, ex, ey);
-      g.fillStyle(angleLocked ? 0x66bb6a : 0xffd54f).fillCircle(ex, ey, 8);
-      this.label.setPosition(lp.x + Math.cos(rad) * (len + 34) * dir, lp.y - Math.sin(rad) * (len + 34)).setText(`${Math.round(angle)}°`).setVisible(true);
-    } else this.label.setVisible(false);
-
-    const bx = seat === 0 ? lp.x - 130 : lp.x + 130;
-    const by = lp.y + 70;
-    const show = power !== null;
-    this.powerBg.setPosition(bx, by).setVisible(show);
-    this.powerFill.setPosition(bx, by - 4).setVisible(show);
-    this.powerLabel.setPosition(bx, by - 175).setVisible(show);
-    if (show) {
-      const p = Phaser.Math.Clamp(power!, 0, 1);
-      this.powerFill.scaleY = Math.max(0.01, p);
-      this.powerFill.fillColor = p > 0.8 ? 0xe53935 : p > 0.5 ? 0xff9800 : 0xffca28;
-      this.powerLabel.setText(`力道 ${Math.round(p * 100)}%`);
+    const rad = Phaser.Math.DegToRad(angle);
+    const ux = Math.cos(rad) * dir,
+      uy = -Math.sin(rad);
+    const p = power === null ? 0 : Phaser.Math.Clamp(power, 0, 1);
+    // 箭頭長度隨蓄力變長
+    const len = 70 + 110 * p;
+    // 虛線導引
+    for (let d = 26; d < len; d += 16) {
+      g.fillStyle(0xffffff, 0.85 - (d / len) * 0.5).fillCircle(lp.x + ux * d, lp.y + uy * d, 3.2);
     }
+    const ex = lp.x + ux * len,
+      ey = lp.y + uy * len;
+    const col = p > 0.8 ? 0xe53935 : p > 0.45 ? 0xff9800 : 0xffd54f;
+    g.lineStyle(7, 0x2b2118).lineBetween(ex - ux * 18 - uy * 11, ey - uy * 18 + ux * 11, ex, ey);
+    g.lineBetween(ex - ux * 18 + uy * 11, ey - uy * 18 - ux * 11, ex, ey);
+    g.lineStyle(4, col).lineBetween(ex - ux * 18 - uy * 11, ey - uy * 18 + ux * 11, ex, ey);
+    g.lineBetween(ex - ux * 18 + uy * 11, ey - uy * 18 - ux * 11, ex, ey);
+    // 蓄力環（繞著出手點）
+    g.lineStyle(9, 0x2b2118, 0.55).strokeCircle(lp.x, lp.y, 34);
+    if (p > 0) {
+      g.lineStyle(7, col);
+      g.beginPath();
+      g.arc(lp.x, lp.y, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p, false);
+      g.strokePath();
+    }
+    this.label
+      .setPosition(lp.x + ux * (len + 30), lp.y + uy * (len + 30))
+      .setText(power === null ? `${Math.round(angle)}°` : `${Math.round(angle)}° · ${Math.round(p * 100)}%`)
+      .setVisible(true);
   }
 
   hide(): void {
     this.visible = false;
     this.g.clear();
     this.label.setVisible(false);
-    this.powerBg.setVisible(false);
-    this.powerFill.setVisible(false);
-    this.powerLabel.setVisible(false);
+    this.hint.setVisible(false);
   }
 }
 
-// ------------------------------------------------------------ 防禦放置
+// ------------------------------------------------------------ 防禦放置（拖到想放的位置，放開就掉下去）
 
 export class PlacementOverlay {
   private zones: Phaser.GameObjects.Rectangle[];
-  private zone: Phaser.GameObjects.Rectangle;
   private ghost: Phaser.GameObjects.Image;
+  private dropLine: Phaser.GameObjects.Graphics;
   private hint: Phaser.GameObjects.Text;
-  private onMove?: (p: Phaser.Input.Pointer) => void;
-  private onDown?: (p: Phaser.Input.Pointer) => void;
+  private handlers: [string, (p: Phaser.Input.Pointer) => void][] = [];
 
   constructor(private scene: Phaser.Scene) {
     this.zones = ARENA.placementZones.map((z) =>
-      scene.add.rectangle(z.x, z.y, z.w, z.h, 0xffffff, 0.15).setOrigin(0, 0).setDepth(30).setStrokeStyle(3, 0xffffff, 0.9).setVisible(false),
+      scene.add.rectangle(z.x, z.y, z.w, z.h, 0xffffff, 0.12).setOrigin(0, 0).setDepth(30).setStrokeStyle(3, 0xffffff, 0.8).setVisible(false),
     );
-    this.zone = this.zones[0];
-    this.ghost = scene.add.image(0, 0, '__WHITE').setDepth(31).setAlpha(0.55).setVisible(false);
+    this.ghost = scene.add.image(0, 0, '__WHITE').setDepth(31).setAlpha(0.6).setVisible(false);
+    this.dropLine = scene.add.graphics().setDepth(30);
     this.hint = scene.add
       .text(0, 0, '', { fontFamily: FONT, fontSize: '16px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 5, align: 'center' })
       .setOrigin(0.5, 1)
@@ -302,34 +307,65 @@ export class PlacementOverlay {
     interactive: boolean,
     existing: DefenseView[],
     textureKey: string,
+    touch: boolean,
     onPlace: (x: number, y: number) => void,
   ): void {
     this.hide();
     const z = ARENA.placementZones[seat];
-    this.zone = this.zones[seat].setVisible(true);
-    this.scene.tweens.add({ targets: this.zone, alpha: { from: 0.5, to: 1 }, yoyo: true, repeat: -1, duration: 600 });
-    this.hint.setPosition(z.x + z.w / 2, z.y - 6).setText(interactive ? `點擊放置「${item.name}」` : `對手正在放置「${item.name}」`).setVisible(true);
+    const zone = this.zones[seat].setVisible(true);
+    this.scene.tweens.add({ targets: zone, alpha: { from: 0.55, to: 1 }, yoyo: true, repeat: -1, duration: 650 });
+    this.hint
+      .setPosition(z.x + z.w / 2, z.y - 6)
+      .setText(
+        interactive
+          ? touch
+            ? `手指拖到想放的位置，放開就放下「${item.name}」`
+            : `移到想放的位置，點一下放下「${item.name}」`
+          : `對手正在放置「${item.name}」`,
+      )
+      .setVisible(true);
     if (!interactive) return;
 
     this.ghost.setTexture(textureKey).setDisplaySize(item.size.w, item.size.h).setVisible(false);
-    const valid = (x: number, y: number) => {
+    const inZone = (x: number, y: number) => x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h;
+    const overlaps = (x: number, y: number) => {
       const r = defenseRect({ x, y, w: item.size.w, h: item.size.h });
-      if (r.x < z.x || r.y < z.y || r.x + r.w > z.x + z.w || r.y + r.h > z.y + z.h) return false;
-      return !existing.some((d) => {
+      return existing.some((d) => {
         const o = defenseRect(d);
         return r.x < o.x + o.w && r.x + r.w > o.x && r.y < o.y + o.h && r.y + r.h > o.y;
       });
     };
-    this.onMove = (p) => {
-      const ok = valid(p.worldX, p.worldY);
-      this.ghost.setPosition(p.worldX, p.worldY).setVisible(true).setTint(ok ? 0xffffff : 0xff5252);
+    const valid = (x: number, y: number) => inZone(x, y) && !overlaps(x, y);
+    let dragging = false;
+    const move = (p: Phaser.Input.Pointer) => {
+      if (touch && !dragging) return;
+      const x = p.worldX,
+        y = p.worldY;
+      const ok = valid(x, y);
+      this.ghost.setPosition(x, y).setVisible(true).setTint(ok ? 0xffffff : 0xff5252);
+      // 往下畫一條落下的參考線
+      this.dropLine.clear();
+      if (ok) {
+        this.dropLine.lineStyle(2, 0xffffff, 0.6);
+        for (let yy = y + item.size.h / 2 + 6; yy < 520; yy += 14) this.dropLine.lineBetween(x, yy, x, Math.min(520, yy + 7));
+      }
     };
-    this.onDown = (p) => {
-      this.onMove?.(p);
+    const down = (p: Phaser.Input.Pointer) => {
+      dragging = true;
+      move(p);
+      if (!touch && valid(p.worldX, p.worldY)) onPlace(Math.round(p.worldX), Math.round(p.worldY));
+    };
+    const up = (p: Phaser.Input.Pointer) => {
+      if (!touch || !dragging) return;
+      dragging = false;
       if (valid(p.worldX, p.worldY)) onPlace(Math.round(p.worldX), Math.round(p.worldY));
     };
-    this.scene.input.on('pointermove', this.onMove);
-    this.scene.input.on('pointerdown', this.onDown);
+    this.handlers = [
+      ['pointermove', move],
+      ['pointerdown', down],
+      ['pointerup', up],
+    ];
+    for (const [ev, fn] of this.handlers) this.scene.input.on(ev, fn);
   }
 
   hide(): void {
@@ -338,10 +374,10 @@ export class PlacementOverlay {
       z.setVisible(false).setAlpha(1);
     }
     this.ghost.setVisible(false);
+    this.dropLine.clear();
     this.hint.setVisible(false);
-    if (this.onMove) this.scene.input.off('pointermove', this.onMove);
-    if (this.onDown) this.scene.input.off('pointerdown', this.onDown);
-    this.onMove = this.onDown = undefined;
+    for (const [ev, fn] of this.handlers) this.scene.input.off(ev, fn);
+    this.handlers = [];
   }
 }
 

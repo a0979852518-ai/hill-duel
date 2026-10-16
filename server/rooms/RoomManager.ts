@@ -110,6 +110,12 @@ export class RoomManager {
       ),
     );
     socket.on(
+      'turn:throw',
+      withRoom((room, seat, p: { turnId: number; angle: number; power: number }) =>
+        battleOf(room)?.throwAt(seat, Number(p?.turnId), Number(p?.angle), Number(p?.power)) ?? 'WRONG_PHASE',
+      ),
+    );
+    socket.on(
       'turn:place',
       withRoom((room, seat, p: { turnId: number; x: number; y: number }) =>
         battleOf(room)?.placeDefense(seat, Number(p?.turnId), Number(p?.x), Number(p?.y)) ?? 'WRONG_PHASE',

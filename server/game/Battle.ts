@@ -151,6 +151,16 @@ export class Battle {
     return null;
   }
 
+  /** 拖曳瞄準＋按住蓄力的新操作：一次送出角度與力道 */
+  throwAt(seat: Seat, turnId: number, angle: number, power: number): ErrorCode | null {
+    const err = this.guard(seat, turnId, ['aimAngle', 'aimPower']);
+    if (err) return err;
+    if (!Number.isFinite(angle) || angle < AIM_CONFIG.minAngle - 0.01 || angle > AIM_CONFIG.maxAngle + 0.01) return 'INVALID_INPUT';
+    this.angle = Math.round(angle * 10) / 10;
+    this.phase = 'aimPower';
+    return this.confirmPower(seat, turnId, power);
+  }
+
   placeDefense(seat: Seat, turnId: number, x: number, y: number): ErrorCode | null {
     const err = this.guard(seat, turnId, ['place']);
     if (err) return err;
@@ -162,9 +172,14 @@ export class Battle {
     this.useTimer.stop();
     this.phase = 'resolving';
     const d = createDefense(this.state, seat, item, x, y);
-    this.hooks.onEvent({ type: 'defensePlaced', seat, defense: this.state.defenseViews().find((v) => v.uid === d.uid)! });
+    const spawn = this.state.defenseViews().find((v) => v.uid === d.uid)!;
+    // 從放手位置掉下來，模擬到全部靜止
+    const { frames, fell } = this.state.physics.settle();
+    const fellUpdates = this.state.dropFallen(fell);
+    this.state.syncPoses();
+    this.hooks.onEvent({ type: 'defensePlaced', seat, defense: spawn, frames, fell: fellUpdates });
     this.hooks.onChange();
-    this.later(GAME_CONFIG.effectSettleMs, () => this.endTurn());
+    this.later(frames.count * frames.sampleMs + GAME_CONFIG.effectSettleMs, () => this.endTurn());
     return null;
   }
 
@@ -193,8 +208,9 @@ export class Battle {
       defenseUpdates: result.defenseUpdates,
       statusApplied: result.statusApplied ?? [],
     });
+    const settleMs = this.settleAndEmit();
     this.hooks.onChange();
-    this.later(GAME_CONFIG.effectSettleMs, () => this.endTurn());
+    this.later(GAME_CONFIG.effectSettleMs + settleMs, () => this.endTurn());
     return null;
   }
 
@@ -237,6 +253,8 @@ export class Battle {
     const { damage: statusDamage, skip: stunned } = this.state.tickStatusesStart(seat);
     const expiredDefenses = this.state.tickDefenses(seat);
     this.hooks.onEvent({ type: 'turnStart', seat, turnId: this.turnId, statusDamage, expiredDefenses });
+    // 有道具消失時，上面疊的東西會掉下來
+    const settleMs = expiredDefenses.length ? this.settleAndEmit() : 0;
     this.hooks.onChange();
 
     if (this.state.fighters[seat].hp <= 0) {
@@ -250,7 +268,7 @@ export class Battle {
       this.later(GAME_CONFIG.turnStartEffectMs, () => this.skip('stunned'));
       return;
     }
-    const delay = statusDamage.length || expiredDefenses.length ? GAME_CONFIG.turnStartEffectMs : 600;
+    const delay = (statusDamage.length || expiredDefenses.length ? GAME_CONFIG.turnStartEffectMs : 600) + settleMs;
     const myTurn = this.turnId;
     this.later(delay, () => {
       if (this.turnId !== myTurn) return;
@@ -291,6 +309,16 @@ export class Battle {
     this.phase = 'resolving';
     this.hooks.onEvent({ type: 'gameOver', winnerSeat: winner, reason });
     this.hooks.onGameOver(winner, reason);
+  }
+
+  /** 讓物理世界落定；有東西在動才送出動畫事件。回傳動畫長度（毫秒） */
+  private settleAndEmit(): number {
+    const { frames, fell } = this.state.physics.settle();
+    const fellUpdates = this.state.dropFallen(fell);
+    this.state.syncPoses();
+    if (Object.keys(frames.d).length === 0 && fellUpdates.length === 0) return 0;
+    this.hooks.onEvent({ type: 'settle', frames, fell: fellUpdates });
+    return frames.count * frames.sampleMs;
   }
 
   private later(ms: number, fn: () => void): void {

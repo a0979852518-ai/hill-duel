@@ -10,7 +10,11 @@ export type Rng = () => number;
  * @param eligible  額外的可抽條件（例如：場上已達上限的防禦道具、沒有目標的功能道具就不抽）
  */
 export function drawItems(count: number, eligible: (item: ItemDef) => boolean, rng: Rng = Math.random): string[] {
-  const pool = ITEMS.filter((i) => i.enabled !== false && (i.weight ?? 1) > 0 && eligible(i));
+  // 測試用：設定環境變數 HILLDUEL_ITEM_POOL=helmet,maya2026 可以只抽這些道具
+  const only = typeof process !== 'undefined' ? process.env.HILLDUEL_ITEM_POOL?.split(',').filter(Boolean) : undefined;
+  const pool = ITEMS.filter(
+    (i) => (only ? only.includes(i.id) : i.enabled !== false) && (i.weight ?? 1) > 0 && eligible(i),
+  );
   const picked: string[] = [];
   const remaining = [...pool];
   while (picked.length < count && remaining.length > 0) {

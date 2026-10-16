@@ -58,6 +58,22 @@ export interface DefenseView {
   maxHits: number | null;
   /** 還剩幾個放置者回合；null = 不限 */
   remainingTurns: number | null;
+  /** 旋轉角度（弧度），物理堆疊後可能是歪的 */
+  angle: number;
+}
+
+/**
+ * 物理動畫影格：伺服器算好每一格的位置，客戶端照著播放。
+ *  p   投擲物 [x, y, 角度]（沒有投擲物時省略）
+ *  d   每個防禦道具 uid → [x, y, 角度][]（只有會動的才會出現）
+ *  gone 某個防禦道具在第幾格消失（被打壞或掉出場外）
+ */
+export interface PhysicsFrames {
+  sampleMs: number;
+  count: number;
+  p?: [number, number, number][];
+  d: Record<string, [number, number, number][]>;
+  gone: Record<string, number>;
 }
 
 export interface TimerView {
@@ -112,6 +128,8 @@ export interface DefenseUpdate {
   durability: number | null;
   hits: number;
   destroyed: boolean;
+  /** 'hit' 被打壞、'fell' 掉出場外、'removed' 被功能道具移除 */
+  reason?: 'hit' | 'fell' | 'removed';
 }
 
 export type ImpactKind = 'character' | 'defense' | 'platform' | 'out';
@@ -127,16 +145,18 @@ export type BattleEvent =
       itemId: string;
       angle: number;
       power: number;
-      /** 取樣後的飛行路徑 [x, y]，每點間隔 sampleMs */
-      path: [number, number][];
-      sampleMs: number;
+      /** 整段物理動畫（投擲物飛行＋被撞到的防禦道具） */
+      frames: PhysicsFrames;
+      /** 第幾格命中（傷害在這一格顯示） */
+      impactFrame: number;
       impact: { x: number; y: number; kind: ImpactKind; defenseUid?: string };
       explosionRadius: number;
       damages: DamageEntry[];
       defenseUpdates: DefenseUpdate[];
       statusApplied: { seat: Seat; statusId: string; turns: number } | null;
     }
-  | { type: 'defensePlaced'; seat: Seat; defense: DefenseView }
+  | { type: 'defensePlaced'; seat: Seat; defense: DefenseView; frames: PhysicsFrames; fell: DefenseUpdate[] }
+  | { type: 'settle'; frames: PhysicsFrames; fell: DefenseUpdate[] }
   | {
       type: 'functional';
       seat: Seat;
@@ -196,6 +216,8 @@ export interface ClientToServerEvents {
   'turn:choose': (p: { turnId: number; itemId: string }, ack: Ack) => void;
   'turn:angle': (p: { turnId: number; angle: number }, ack: Ack) => void;
   'turn:power': (p: { turnId: number; power: number }, ack: Ack) => void;
+  /** 一次送出角度＋力道（拖曳瞄準、按住蓄力、放開投擲） */
+  'turn:throw': (p: { turnId: number; angle: number; power: number }, ack: Ack) => void;
   'turn:place': (p: { turnId: number; x: number; y: number }, ack: Ack) => void;
   'turn:functional': (p: { turnId: number; targetUid?: string }, ack: Ack) => void;
   'turn:aimPreview': (p: { turnId: number; angle?: number; power?: number }) => void;

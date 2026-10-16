@@ -39,6 +39,7 @@ function route(): void {
   const inRoom = !!net.session && !!snap && snap.code === net.session.code && seat !== null;
 
   const wantBattle = inRoom && (snap!.status === 'battle' || snap!.status === 'gameOver');
+  document.body.classList.toggle('in-battle', wantBattle);
   if (wantBattle && !game.scene.isActive('Battle')) {
     game.scene.stop('Backdrop');
     game.scene.start('Battle');

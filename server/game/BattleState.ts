@@ -3,6 +3,7 @@
 
 import { getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
 import type { DamageEntry, DefenseUpdate, DefenseView, HealEntry, Seat, StatusView } from '../../shared/types.js';
+import { PhysicsWorld } from './PhysicsWorld.js';
 
 export interface FighterState {
   seat: Seat;
@@ -19,6 +20,8 @@ export interface DefenseState extends DefenseView {
 export class BattleState {
   fighters: [FighterState, FighterState];
   defenses: DefenseState[] = [];
+  /** 防禦道具的真實物理（位置、角度、堆疊） */
+  readonly physics = new PhysicsWorld();
   private uidCounter = 0;
 
   constructor(maxHp: [number, number]) {
@@ -126,18 +129,43 @@ export class BattleState {
     const destroyed =
       (d.durability !== null && d.durability <= 0) || (d.maxHits !== null && d.hits >= d.maxHits);
     if (destroyed) this.removeDefense(uid);
-    return { uid, durability: d.durability, hits: d.hits, destroyed };
+    return { uid, durability: d.durability, hits: d.hits, destroyed, reason: destroyed ? 'hit' : undefined };
   }
 
   destroyDefense(uid: string): DefenseUpdate | null {
     const d = this.getDefense(uid);
     if (!d) return null;
     this.removeDefense(uid);
-    return { uid, durability: 0, hits: d.hits, destroyed: true };
+    return { uid, durability: 0, hits: d.hits, destroyed: true, reason: 'removed' };
   }
 
   removeDefense(uid: string): void {
     this.defenses = this.defenses.filter((d) => d.uid !== uid);
+    this.physics.removeDefense(uid);
+  }
+
+  /** 物理模擬後，把每個防禦道具的新位置/角度寫回 */
+  syncPoses(): void {
+    for (const d of this.defenses) {
+      const p = this.physics.pose(d.uid);
+      if (p) {
+        d.x = p.x;
+        d.y = p.y;
+        d.angle = p.angle;
+      }
+    }
+  }
+
+  /** 物理世界裡已經掉出場外的道具 → 從資料中移除，回傳更新 */
+  dropFallen(uids: string[]): DefenseUpdate[] {
+    const out: DefenseUpdate[] = [];
+    for (const uid of uids) {
+      const d = this.getDefense(uid);
+      if (!d) continue;
+      this.defenses = this.defenses.filter((x) => x.uid !== uid);
+      out.push({ uid, durability: d.durability, hits: d.hits, destroyed: true, reason: 'fell' });
+    }
+    return out;
   }
 
   /**

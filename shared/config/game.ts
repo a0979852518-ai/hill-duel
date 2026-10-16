@@ -33,10 +33,12 @@ export const GAME_CONFIG = {
 export const ARENA = {
   width: 1280,
   height: 720,
-  /** 重力（像素/秒²），各投擲物還會再乘上自己的 gravityScale */
-  gravity: 600,
-  /** 物理模擬的固定步長（秒）— 伺服器用它計算整條拋物線 */
-  physicsStep: 1 / 60,
+  /** 重力（像素/秒²），各投擲物還會再乘上自己的 gravityScale。數字越大東西越「重」 */
+  gravity: 1150,
+  /** 物理模擬的固定步長（秒）；用 120Hz 避免高速物體穿透薄的東西 */
+  physicsStep: 1 / 120,
+  /** 每幾個物理步記錄一格動畫（4 步 = 每 33ms 一格） */
+  frameEvery: 4,
   /** 單次投擲最多模擬幾秒，避免無限飛行 */
   maxFlightSeconds: 8,
   /** 超出這個範圍就算飛出場外 */
@@ -52,26 +54,41 @@ export const ARENA = {
   ],
   /** 角色受擊判定框大小（以腳底中心為基準往上；配合 150px 高的真人站姿） */
   characterHitbox: { w: 56, h: 150 },
+  /** 角色的物理外型（東西可以疊在頭上）：身體長方形＋頭部圓形，相對腳底中心 */
+  characterBody: { torsoW: 34, torsoH: 118, headR: 14, headY: -134 },
   /** 投擲出手點：相對腳底中心的偏移（右側玩家 x 會自動鏡像） */
   launchOffset: { x: 30, y: -135 },
   /**
-   * 防禦道具可放置區域（矩形）。
-   * index 0 = 左方玩家，1 = 右方玩家。道具整個外框必須落在區域內。
+   * 防禦道具「放手位置」可選的區域（矩形）。
+   * index 0 = 左方玩家，1 = 右方玩家。道具會從放手位置掉下來，照物理堆疊。
+   * 包含自己頭頂上方，所以鋼盔可以直接戴到頭上。
    */
   placementZones: [
-    { x: 200, y: 300, w: 200, h: 220 },
-    { x: 880, y: 300, w: 200, h: 220 },
+    { x: 60, y: 170, w: 340, h: 330 },
+    { x: 880, y: 170, w: 340, h: 330 },
   ],
 } as const;
 
-/** 角度 / 力道控制條的擺動設定 */
+/** 投擲操作：滑鼠/手指決定方向，按住蓄力，放開投出 */
 export const AIM_CONFIG = {
-  minAngle: 5,
-  maxAngle: 85,
-  /** 角度每秒擺動幾度 */
-  angleSpeed: 70,
+  /** 可瞄準的角度範圍（0 = 水平，90 = 正上方） */
+  minAngle: -10,
+  maxAngle: 88,
   minPower: 0.05,
   maxPower: 1,
-  /** 力道每秒擺動多少（0~1） */
-  powerSpeed: 0.9,
+  /** 從 0 蓄滿需要幾秒 */
+  chargeSeconds: 1.15,
+} as const;
+
+/** 物理材質（Matter.js） */
+export const PHYSICS = {
+  projectile: { friction: 0.35, restitution: 0.32, frictionAir: 0, density: 0.004 },
+  defense: { friction: 0.7, restitution: 0.05, frictionAir: 0.01, density: 0.002 },
+  ground: { friction: 0.8, restitution: 0.1 },
+  /** 命中後投擲物繼續彈跳/滾動的展示時間（毫秒） */
+  afterImpactMs: 1100,
+  /** 堆疊最多模擬多久等它停下來（毫秒） */
+  settleMaxMs: 3500,
+  /** 掉到這個高度以下的防禦道具算掉出場外 */
+  killY: 760,
 } as const;
