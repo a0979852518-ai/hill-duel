@@ -47,9 +47,13 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
       let amount = 0;
       let source: DamageEntry['source'] = 'splash';
       let headshot = false;
+      let bounces = 0;
       if (impact.kind === 'character' && impact.hitSeat === target) {
         amount = item.damage;
         source = 'direct';
+        // 先在地上彈過再打到：每彈一次傷害減半
+        bounces = impact.bounces ?? 0;
+        amount *= Math.pow(0.5, bounces);
         // 打到頭（身體上緣以上）傷害 ×1.5，可再和其他倍率（精神傷害、乳清…）相乘
         if (impact.y < headLineY()) {
           amount *= HEADSHOT_MULTIPLIER;
@@ -69,6 +73,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
       if (reductionFor === target) amount *= 1 - reduction;
       const entry = state.dealDamage(target, amount, source, seat);
       if (entry && headshot) entry.headshot = true;
+      if (entry && bounces > 0) entry.bounces = bounces;
       if (entry) {
         damages.push(entry);
         hitSeats.push(target);
@@ -116,6 +121,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     damages,
     defenseUpdates,
     statusApplied,
+    bounceFrames: sim.bounceFrames,
   };
 }
 

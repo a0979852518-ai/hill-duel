@@ -125,6 +125,8 @@ export interface DamageEntry {
   statusId?: string;
   /** 打到頭（傷害 ×1.5） */
   headshot?: boolean;
+  /** 先在地上彈了幾次才打到（每次傷害減半） */
+  bounces?: number;
 }
 
 export interface HealEntry {
@@ -164,6 +166,8 @@ export type BattleEvent =
       damages: DamageEntry[];
       defenseUpdates: DefenseUpdate[];
       statusApplied: { seat: Seat; statusId: string; turns: number } | null;
+      /** 投擲物落地彈跳的格數 */
+      bounceFrames?: number[];
     }
   | { type: 'defensePlaced'; seat: Seat; defense: DefenseView; frames: PhysicsFrames; fell: DefenseUpdate[] }
   | { type: 'settle'; frames: PhysicsFrames; fell: DefenseUpdate[] }

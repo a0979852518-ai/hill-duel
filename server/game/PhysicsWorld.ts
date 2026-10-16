@@ -40,6 +40,8 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
 interface DefenseBodyInfo {
   body: any;
   owner: Seat;
+  /** 穿戴型（鋼盔）：不被額外推、不壓人、不跟著被打飛 */
+  wearable: boolean;
   /** 圖片中心相對剛體質心的偏移（剛體角度為 0 時） */
   offset: { x: number; y: number };
 }
@@ -76,6 +78,8 @@ interface KnockState {
   /** 被打死了就不起來 */
   stayDown: boolean;
   done: boolean;
+  /** 戴在頭上的穿戴型道具（鋼盔）：跟著身體一起翻滾，最後還戴在頭上 */
+  worn: { body: any; rx: number; ry: number; a0: number }[];
   /** 每格 [腳底x, 腳底y-地面, 角度, 身體左右翻面(1 ~ -1)] */
   frames: Pose4[];
 }
@@ -99,6 +103,8 @@ export interface ThrowImpact {
   y: number;
   defenseUid?: string;
   hitSeat?: Seat;
+  /** 命中前在地上彈了幾次（每彈一次傷害減半） */
+  bounces?: number;
 }
 
 export class PhysicsWorld {
@@ -114,8 +120,8 @@ export class PhysicsWorld {
     this.engine = Engine.create({
       gravity: { x: 0, y: 1, scale: ARENA.gravity / 1e6 },
       enableSleeping: true,
-      positionIterations: 10,
-      velocityIterations: 8,
+      positionIterations: 8,
+      velocityIterations: 6,
     });
     const W = ARENA.world.width;
     const G = ARENA.groundY;
@@ -166,7 +172,8 @@ export class PhysicsWorld {
     const opts = {
       friction: def.friction ?? PHYSICS.defense.friction,
       restitution: PHYSICS.defense.restitution,
-      frictionAir: PHYSICS.defense.frictionAir,
+      // 穿戴型維持比較穩的舊物理（空氣阻力大一點，戴在頭上不容易晃掉）
+      frictionAir: def.wearable ? 0.01 : PHYSICS.defense.frictionAir,
       density: def.density ?? PHYSICS.defense.density,
       collisionFilter: { category: owner === 0 ? CAT.def0 : CAT.def1, mask: 0xffff },
     };
@@ -186,7 +193,7 @@ export class PhysicsWorld {
     }
     // 圖片中心（x,y）相對質心的偏移
     const offset = { x: x - body.position.x, y: y - body.position.y };
-    return { body, owner, offset };
+    return { body, owner, offset, wearable: !!def.wearable };
   }
 
   /** 這個位置放得下嗎（不能跟現有的東西重疊） */
@@ -232,7 +239,9 @@ export class PhysicsWorld {
   private hideChar(seat: Seat, hidden: boolean): void {
     const body = this.chars[seat];
     const dy = hidden ? 4000 : -4000;
-    Body.setPosition(body, { x: body.position.x, y: body.position.y + dy }, true);
+    // 不要帶速度：固定物體瞬移 4000px 如果算成速度，碰到的東西會被彈飛
+    Body.setPosition(body, { x: body.position.x, y: body.position.y + dy }, false);
+    Body.setVelocity(body, { x: 0, y: 0 });
     this.wakeDefenses();
   }
 
@@ -240,11 +249,20 @@ export class PhysicsWorld {
     const { seat } = req;
     const x = this.charX[seat];
     const G = ARENA.groundY;
+    // 戴在頭上的鋼盔：先從物理世界拿出來，翻滾時跟著頭走
+    const worn: KnockState['worn'] = [];
+    for (const info of this.defs.values()) {
+      const p = info.body.position;
+      if (info.wearable && Math.abs(p.x - x) < 55 && p.y < G - 105 && p.y > G - 240) {
+        worn.push({ body: info.body, rx: p.x - x, ry: p.y - G, a0: info.body.angle });
+        Composite.remove(this.engine.world, info.body);
+      }
+    }
     this.hideChar(seat, true);
     // 戴在頭上/靠在身上的東西跟著被打飛
     for (const info of this.defs.values()) {
       const p = info.body.position;
-      if (Math.abs(p.x - x) < 70 && p.y < G - 20 && p.y > G - 260) {
+      if (!info.wearable && Math.abs(p.x - x) < 70 && p.y < G - 20 && p.y > G - 260) {
         Body.setVelocity(info.body, { x: (req.vx * 0.7) / 60, y: (req.vy * 0.6 - 180) / 60 });
         Body.setAngularVelocity(info.body, (req.omega * 0.8 + (req.vx > 0 ? 3 : -3)) / 60);
       }
@@ -278,6 +296,7 @@ export class PhysicsWorld {
       endX: x,
       stayDown: req.stayDown,
       done: false,
+      worn,
       // 補齊命中前的影格（站著不動）
       frames: Array.from({ length: frames.count }, () => [x, 0, 0, 1] as Pose4),
     };
@@ -294,6 +313,36 @@ export class PhysicsWorld {
 
   private stepKnock(k: KnockState, dt: number): void {
     if (k.done) return;
+    this.stepKnockInner(k, dt);
+    this.updateWorn(k);
+    if (k.done) this.releaseWorn(k);
+  }
+
+  /** 鋼盔跟著頭：腳底位置＋身體旋轉後的相對位置 */
+  private updateWorn(k: KnockState): void {
+    if (!k.worn.length) return;
+    const [fx, fy, a] = k.done ? [k.endX, 0, 0] : this.knockPose(k);
+    const c = Math.cos(a),
+      sn = Math.sin(a);
+    for (const w of k.worn) {
+      Body.setPosition(w.body, { x: fx + w.rx * c - w.ry * sn, y: ARENA.groundY + fy + w.rx * sn + w.ry * c }, false);
+      Body.setAngle(w.body, w.a0 + a, false);
+    }
+  }
+
+  /** 結束後把鋼盔放回物理世界（站起來了就還戴在頭上） */
+  private releaseWorn(k: KnockState): void {
+    if (!k.worn.length) return;
+    this.updateWorn(k);
+    for (const w of k.worn) {
+      Body.setVelocity(w.body, { x: 0, y: 0 });
+      Body.setAngularVelocity(w.body, 0);
+      Composite.add(this.engine.world, w.body);
+    }
+    k.worn = [];
+  }
+
+  private stepKnockInner(k: KnockState, dt: number): void {
     k.t += dt;
     const range = ARENA.characterXRange[k.seat];
     if (k.phase === 'tumble') {
@@ -374,7 +423,8 @@ export class PhysicsWorld {
   /** 角色還藏在地底時更新它的 x */
   private moveCharHidden(seat: Seat, x: number): void {
     const body = this.chars[seat];
-    Body.setPosition(body, { x: body.position.x + (x - this.charX[seat]), y: body.position.y }, true);
+    Body.setPosition(body, { x: body.position.x + (x - this.charX[seat]), y: body.position.y }, false);
+    Body.setVelocity(body, { x: 0, y: 0 });
     this.charX[seat] = x;
   }
 
@@ -524,7 +574,13 @@ export class PhysicsWorld {
     fell: string[];
     impactSpeed: number;
     crushes: { seat: Seat; uid: string; frame: number }[];
+    /** 投擲物在地上彈跳的格數（客戶端冒灰塵） */
+    bounceFrames: number[];
   } {
+    // 落地不算結束：繼續彈跳/滾動，之後打到人或防禦道具仍然算命中（傷害依彈跳次數減半）
+    let groundHits = 0;
+    let firstGroundStep = -1;
+    const bounceFrames: number[] = [];
     const frames = this.newFrames();
     const G = ARENA.groundY;
     // 被打壞、還在倒的防禦道具（全部靜止後才移除）
@@ -534,7 +590,8 @@ export class PhysicsWorld {
     for (const [uid, info] of this.defs) {
       for (const s of [0, 1] as Seat[]) {
         const p = info.body.position;
-        if (Math.abs(p.x - this.charX[s]) < 60 && p.y < G - 60) wornBy[s].add(uid);
+        // 穿戴型道具（鋼盔）永遠不算壓到人
+        if (info.wearable || (Math.abs(p.x - this.charX[s]) < 60 && p.y < G - 60)) wornBy[s].add(uid);
       }
     }
     const crushes: { seat: Seat; uid: string; frame: number }[] = [];
@@ -599,9 +656,22 @@ export class PhysicsWorld {
         if (!other) continue;
         const label: string = other.label ?? '';
         const contact = pair.collision?.supports?.[0] ?? proj.position;
-        if (label.startsWith('def:')) impact = { kind: 'defense', x: contact.x, y: contact.y, defenseUid: label.slice(4) };
-        else if (label.startsWith('char')) impact = { kind: 'character', x: contact.x, y: contact.y, hitSeat: Number(label.slice(4)) as Seat };
-        else impact = { kind: 'platform', x: contact.x, y: contact.y };
+        if (label.startsWith('def:')) impact = { kind: 'defense', x: contact.x, y: contact.y, defenseUid: label.slice(4), bounces: groundHits };
+        else if (label.startsWith('char')) impact = { kind: 'character', x: contact.x, y: contact.y, hitSeat: Number(label.slice(4)) as Seat, bounces: groundHits };
+        else {
+          // 碰到地面：記一次彈跳，繼續飛
+          const vy = Math.abs(proj.velocity.y) * 60;
+          if (vy > 60 || groundHits === 0) {
+            groundHits++;
+            bounceFrames.push(frames.count);
+          }
+          if (firstGroundStep < 0) {
+            firstGroundStep = step;
+            // 落地後在地上滾/彈會很快慢下來（草地的阻力）
+            proj.frictionAir = Math.max(proj.frictionAir, PHYSICS.groundDrag);
+          }
+          continue;
+        }
         return;
       }
     };
@@ -647,6 +717,14 @@ export class PhysicsWorld {
             projGone = true;
           }
         }
+        // 彈跳/滾動到停下來、彈太多次或滾太久都沒打到東西 → 算落空
+        if (!impact && groundHits > 0) {
+          const sp = Body.getSpeed(proj) * 60;
+          if (sp < 90 || groundHits > PHYSICS.maxBounces || (step - firstGroundStep) * STEP_MS > PHYSICS.maxRollMs) {
+            impact = { kind: 'platform', x: proj.position.x, y: proj.position.y };
+            continue;
+          }
+        }
         if (!impact && step >= maxFlight) {
           impact = { kind: 'out', x: proj.position.x, y: proj.position.y };
           continue;
@@ -686,6 +764,7 @@ export class PhysicsWorld {
         knock.frames[knock.frames.length - 1] = [knock.endX, 0, 0, 1];
       }
       knock.done = true;
+      this.releaseWorn(knock);
     }
     for (const uid of this.removeFallen(frames)) if (!dying.delete(uid)) fell.push(uid);
     // 被打壞的道具倒完、靜止了才消失
@@ -694,13 +773,13 @@ export class PhysicsWorld {
       this.removeDefense(uid);
     }
     if (impactFrame < 0) impactFrame = Math.max(0, frames.count - 1);
-    return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell, impactSpeed, crushes };
+    return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell, impactSpeed, crushes, bounceFrames };
   }
 
   /** 投擲物打中防禦道具時的額外衝量（線速度＋依打點產生的旋轉） */
   private kickDefense(uid: string, at: { x: number; y: number }, vel: { x: number; y: number }, weightKg: number): void {
     const info = this.defs.get(uid);
-    if (!info) return;
+    if (!info || info.wearable) return;
     const b = info.body;
     Sleeping.set(b, false);
     // 衝量（質量單位 × 像素/步）

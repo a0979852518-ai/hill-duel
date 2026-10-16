@@ -165,29 +165,43 @@ export class Hud {
     }
   }
 
-  /** 每幀更新倒數 */
+  private lastTimerKey = '';
+
+  /** 每幀更新倒數（文字只在數字/顏色改變時才重畫，避免每幀重新產生文字貼圖） */
   tick(now: number): void {
     const g = this.timerRing;
     const cx = ARENA.width / 2,
       cy = 92,
       r = 30;
-    g.clear();
     if (!this.timerActive) {
-      this.timerText.setText('');
+      if (this.lastTimerKey !== 'off') {
+        g.clear();
+        this.timerText.setText('');
+        this.lastTimerKey = 'off';
+      }
       return;
     }
     const remain = Math.max(0, this.timerEnd - now);
     const secs = Math.ceil(remain / 1000);
     const warn = remain <= 5000;
     const pulse = warn ? 1 + 0.12 * Math.abs(Math.sin(now / 160)) : 1;
+    // 圓環每 1/30 秒才重畫一次就夠順
+    const ringStep = Math.round((remain / this.timerTotal) * 240);
+    const key = `${secs}|${warn}|${ringStep}|${warn ? Math.round(pulse * 40) : 0}`;
+    if (key === this.lastTimerKey) return;
+    const textChanged = !this.lastTimerKey.startsWith(`${secs}|${warn}|`);
+    this.lastTimerKey = key;
+    g.clear();
     g.fillStyle(warn ? 0xffcdd2 : 0xfff8ea).fillCircle(cx, cy, r * pulse);
     g.lineStyle(4, 0x2b2118).strokeCircle(cx, cy, r * pulse);
     g.lineStyle(6, warn ? 0xe53935 : 0xe8743b);
     g.beginPath();
     g.arc(cx, cy, r * pulse - 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (remain / this.timerTotal), false);
     g.strokePath();
-    this.timerText.setText(String(secs));
-    this.timerText.setColor(warn ? '#e53935' : '#2b2118');
+    if (textChanged) {
+      this.timerText.setText(String(secs));
+      this.timerText.setColor(warn ? '#e53935' : '#2b2118');
+    }
     this.timerText.setScale(pulse);
   }
 

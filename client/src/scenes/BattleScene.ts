@@ -486,7 +486,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean }[]): void {
+  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number }[]): void {
     for (const d of damages) {
       if (d.source === 'crush') {
         damageNumber(this, this.xOf(d.seat), d.amount, '#ff7043', '被壓到！', '-', true);
@@ -497,7 +497,8 @@ export class BattleScene extends Phaser.Scene {
         continue;
       }
       const color = d.headshot ? '#ff5252' : d.source === 'direct' ? '#ffeb3b' : d.source === 'functional' ? '#ffd54f' : '#ffffff';
-      damageNumber(this, this.xOf(d.seat), d.amount, color, d.headshot ? '爆頭！' : d.source === 'direct' ? '直擊' : undefined, '-', d.source === 'direct');
+      const bounceTag = d.bounces ? `彈地${d.bounces}次 ` : '';
+      damageNumber(this, this.xOf(d.seat), d.amount, color, d.headshot ? bounceTag + '爆頭！' : d.source === 'direct' ? bounceTag + '直擊' : undefined, '-', d.source === 'direct');
       if (d.headshot) this.cameras.main.shake(300, 0.014);
       this.hitCharacter(d.seat, d.source === 'direct');
       this.hud.setHp(d.seat, d.hpAfter);
@@ -522,7 +523,7 @@ export class BattleScene extends Phaser.Scene {
     frames: PhysicsFrames,
     opts: {
       proj?: Phaser.GameObjects.Image;
-      trail?: Phaser.GameObjects.Graphics;
+      trail?: Phaser.GameObjects.Container;
       onFrame?: (i: number) => void;
       /** 投擲物每次更新位置（世界座標、速度 px/s） */
       onProj?: (x: number, y: number, vx: number, vy: number) => void;
@@ -599,7 +600,14 @@ export class BattleScene extends Phaser.Scene {
             if (v < frames.p.length - 1 || (frames.p.length === 1 && v < 1)) {
               const [x, y, a] = pose(frames.p, v);
               opts.proj.setPosition(x, y).setRotation(a).setVisible(true);
-              opts.trail?.fillStyle(0xffffff, 0.45).fillCircle(x, y, 2.2);
+              // 軌跡：每隔一小段距離放一個點（用貼圖，不用每幀重畫 Graphics）
+              if (opts.trail) {
+                const lastDot = opts.trail.getData('last') as [number, number] | undefined;
+                if (!lastDot || Math.hypot(x - lastDot[0], y - lastDot[1]) > 14) {
+                  opts.trail.add(this.add.image(x, y, 'fx:dot').setAlpha(0.5));
+                  opts.trail.setData('last', [x, y]);
+                }
+              }
               if (opts.onProj) {
                 const i = Math.min(frames.p.length - 2, Math.floor(v));
                 const vx = i >= 0 ? ((frames.p[i + 1][0] - frames.p[i][0]) * 1000) / frames.sampleMs : 0;
@@ -634,7 +642,13 @@ export class BattleScene extends Phaser.Scene {
     await wait(this, 140); // 出手前的一點點蓄勢
     const proj = this.add.image(start[0], start[1], key).setDepth(46);
     fitInto(proj, item?.kind === 'throwable' ? Math.max(32, item.radius * 3.4) : 32);
-    const trail = this.add.graphics().setDepth(44);
+    if (!this.textures.exists('fx:dot')) {
+      const g = this.make.graphics({}, false);
+      g.fillStyle(0xffffff, 1).fillCircle(3, 3, 2.4);
+      g.generateTexture('fx:dot', 6, 6);
+      g.destroy();
+    }
+    const trail = this.add.container(0, 0).setDepth(44);
 
     const reasons: Record<string, DefenseUpdate> = {};
     for (const u of e.defenseUpdates) reasons[u.uid] = u;
@@ -650,6 +664,8 @@ export class BattleScene extends Phaser.Scene {
         this.speedLines.set(vx, vy, Math.hypot(vx, vy));
       },
       onFrame: (k) => {
+        // 投擲物落地彈起
+        if (e.bounceFrames?.includes(k) && e.frames.p?.[k]) puff(this, e.frames.p[k][0], ARENA.groundY);
         // 被倒下的防禦道具壓到
         const crush = e.damages.filter((d) => d.frame === k);
         if (crush.length) this.applyDamages(crush);

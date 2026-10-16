@@ -137,6 +137,11 @@ export const PHYSICS = {
   ground: { friction: 0.8, restitution: 0.1 },
   /** 命中後投擲物繼續彈跳/滾動的展示時間（毫秒） */
   afterImpactMs: 1100,
+  /** 落地後最多彈幾次、最多滾多久（毫秒）還沒打到東西就算落空 */
+  maxBounces: 4,
+  maxRollMs: 2500,
+  /** 投擲物落地後的阻力（越大滾越短） */
+  groundDrag: 0.05,
   /** 堆疊最多模擬多久等它停下來（毫秒） */
   settleMaxMs: 3500,
   /** 掉到這個高度以下的防禦道具算掉出場外 */

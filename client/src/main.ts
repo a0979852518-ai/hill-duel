@@ -19,7 +19,7 @@ const game = new Phaser.Game({
   parent: 'game',
   width: ARENA.width,
   height: ARENA.height,
-  backgroundColor: '#1d2733',
+  backgroundColor: '#3f8fd0', // 天空頂端的顏色（清畫面用，比畫一層全螢幕的圖便宜）
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   // 慢的裝置（低於 5 FPS）時 Phaser 預設會把每幀時間縮成 16ms，動畫和計時會變得超慢；
   // 放寬到 2 FPS 才啟動保護，讓慢裝置的動畫仍跟真實時間同步。

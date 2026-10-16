@@ -57,56 +57,76 @@ export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
     span = right - left;
 
   // 天空（漸層貼圖拉伸）
+  // 天空＋太陽＋雲＋遠山 合成一張貼圖、一個視差圖層（以前是 5 層全螢幕疊圖，手機 GPU 很吃力）
+  // 鏡頭看到比貼圖更高的地方時，露出的是遊戲底色（main.ts 的 backgroundColor＝天空頂端的顏色）
+  const BX0 = -1400,
+    BX1 = W - 800,
+    BY0 = -900,
+    BY1 = G + 10;
+  const RES = 0.4;
+  const bw = Math.ceil((BX1 - BX0) * RES),
+    bh = Math.ceil((BY1 - BY0) * RES);
   if (scene.textures.exists(BACKGROUND_KEY)) {
-    const img = scene.add.image(W / 2, G - 200, BACKGROUND_KEY).setOrigin(0.5, 1);
-    img.setScale(Math.max(span / img.width, (G - 200 - TOP) / img.height));
+    const img = scene.add.image(BX0, BY1, BACKGROUND_KEY).setOrigin(0, 1).setScrollFactor(0.5, 1);
+    img.setDisplaySize(BX1 - BX0, BY1 - BY0);
     root.add(img);
   } else {
-    if (!scene.textures.exists('arena:sky')) {
-      const tex = scene.textures.createCanvas('arena:sky', 4, 256)!;
+    if (!scene.textures.exists('arena:backdrop')) {
+      const tex = scene.textures.createCanvas('arena:backdrop', bw, bh)!;
       const ctx = tex.getContext();
-      const grad = ctx.createLinearGradient(0, 0, 0, 256);
+      const X = (x: number) => (x - BX0) * RES,
+        Y = (y: number) => (y - BY0) * RES,
+        S = (v: number) => v * RES;
+      // 天空漸層
+      const grad = ctx.createLinearGradient(0, 0, 0, bh);
       grad.addColorStop(0, '#3f8fd0');
       grad.addColorStop(0.55, '#8cc4ea');
       grad.addColorStop(1, '#ffe3b0');
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 4, 256);
+      ctx.fillRect(0, 0, bw, bh);
+      const r = rng(7);
+      // 太陽
+      const sunX = (BX0 + BX1) / 2,
+        sunY = 380;
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.beginPath();
+      ctx.arc(X(sunX), Y(sunY), S(150), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,243,196,0.95)';
+      ctx.beginPath();
+      ctx.arc(X(sunX), Y(sunY), S(95), 0, Math.PI * 2);
+      ctx.fill();
+      // 雲
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      const ell = (x: number, y: number, w: number, h: number) => {
+        ctx.beginPath();
+        ctx.ellipse(X(x), Y(y), S(w / 2), S(h / 2), 0, 0, Math.PI * 2);
+        ctx.fill();
+      };
+      for (let k = 0; k < 16; k++) {
+        const x = BX0 + r() * (BX1 - BX0),
+          y = BY0 + 150 + r() * 650,
+          sc = 0.8 + r() * 1.3;
+        ell(x, y, 150 * sc, 44 * sc);
+        ell(x + 38 * sc, y - 18 * sc, 95 * sc, 54 * sc);
+      }
+      // 遠山兩層
+      const hills = (seed: number, color: string, baseY: number, amp: number, step: number) => {
+        const rr = rng(seed);
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(X(BX0), Y(BY1 + 50));
+        for (let x = BX0; x <= BX1 + step; x += step) ctx.lineTo(X(x), Y(baseY - amp * (0.4 + rr() * 0.6)));
+        ctx.lineTo(X(BX1 + step), Y(BY1 + 50));
+        ctx.closePath();
+        ctx.fill();
+      };
+      hills(11, '#a9cfae', G - 180, 260, 220);
+      hills(13, '#86b78c', G - 70, 170, 160);
       tex.refresh();
     }
-    root.add(scene.add.image(left, TOP, 'arena:sky').setOrigin(0, 0).setDisplaySize(span, G + 40 - TOP));
+    root.add(scene.add.image(BX0, BY0, 'arena:backdrop').setOrigin(0, 0).setScale(1 / RES).setScrollFactor(0.5, 1));
   }
-
-  // 太陽與雲（慢速視差）
-  const r = rng(7);
-  const far = scene.add.graphics().setScrollFactor(0.25, 0.25);
-  far.fillStyle(0xffffff, 0.25).fillCircle(W / 2, 260, 130);
-  far.fillStyle(0xfff3c4, 0.95).fillCircle(W / 2, 260, 85);
-  far.fillStyle(0xffffff, 0.85);
-  for (let i = 0; i < 14; i++) {
-    const x = left + r() * span,
-      y = TOP + 900 + r() * 700,
-      s = 0.8 + r() * 1.2;
-    far.fillEllipse(x, y, 140 * s, 40 * s).fillEllipse(x + 36 * s, y - 16 * s, 90 * s, 50 * s);
-  }
-  root.add(far);
-
-  // 遠山（兩層視差）
-  const hills = (key: string, seed: number, factor: number, color: number, baseY: number, amp: number, step: number) => {
-    const rr = rng(seed);
-    const top = baseY - amp;
-    const img = baked(scene, key, left, top, span, G + 400 - top, 0.4, (g, X, Y) => {
-      g.fillStyle(color, 1);
-      g.beginPath();
-      g.moveTo(X(left), Y(G + 400));
-      for (let x = left; x <= right + step; x += step) g.lineTo(X(x), Y(baseY - amp * (0.4 + rr() * 0.6)));
-      g.lineTo(X(right + step), Y(G + 400));
-      g.closePath();
-      g.fillPath();
-    });
-    root.add(img.setScrollFactor(factor, factor));
-  };
-  hills('arena:hills1', 11, 0.45, 0xa9cfae, G - 180, 260, 220);
-  hills('arena:hills2', 13, 0.7, 0x86b78c, G - 70, 170, 160);
 
   // 地面（含草叢、距離木樁）
   const gTop = G - 40;

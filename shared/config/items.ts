@@ -91,6 +91,11 @@ export interface DefenseDef extends ItemBase {
   density?: number;
   /** 摩擦力（越大越不會滑），預設 PHYSICS.defense.friction */
   friction?: number;
+  /**
+   * 穿戴型（鋼盔）：不算一般防禦道具——被打中不會被額外推倒、不會倒下壓人、
+   * 戴在頭上的人被打飛時也不會跟著被甩出去，物理保持穩定，可以穩穩戴在頭上。
+   */
+  wearable?: boolean;
   /** 耐久度；null = 不看耐久，只看 maxHits */
   durability: number | null;
   /** 最多可承受幾次攻擊；null = 不限 */
@@ -251,6 +256,8 @@ export const ITEMS: ItemDef[] = [
     placeholder: { shape: 'rect', color: 0x5b6b3a },
     size: { w: 84, h: 53 },
     weightKg: 1.2,
+    wearable: true,
+    friction: 0.8,
     body: { kind: 'helmet', wall: 11, cap: 18 },
     density: 0.004,
     durability: null,
