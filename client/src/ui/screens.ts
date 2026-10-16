@@ -2,7 +2,7 @@
 // 用 HTML 做選單比較好打字、複製房號，也比較適合手機。
 
 import { PLAYABLE_CHARACTERS } from '../../../shared/config/characters.js';
-import { ERROR_TEXT, type ErrorCode, type RoomSnapshot, type Seat } from '../../../shared/types.js';
+import { ERROR_TEXT, type AiDifficulty, type ErrorCode, type RoomSnapshot, type Seat } from '../../../shared/types.js';
 import { loadName } from '../net/Network.js';
 import { store } from '../state/store.js';
 import { toast } from './toast.js';
@@ -34,7 +34,7 @@ export function showMenu(message?: string): void {
   const el = h(`
     <div class="panel" data-screen="menu">
       <h1 class="title">山丘投擲對決</h1>
-      <p class="subtitle">雙人線上・回合制砲擊對戰</p>
+      <p class="subtitle">雙人線上・回合制砲擊對戰（也能單挑電腦）</p>
       <div class="field">
         <label for="name">你的名字</label>
         <input id="name" maxlength="12" placeholder="輸入暱稱" value="${esc(loadName())}" />
@@ -46,6 +46,13 @@ export function showMenu(message?: string): void {
         <input id="code" class="code" maxlength="6" placeholder="ABC123" autocomplete="off" />
       </div>
       <button class="btn secondary block" data-act="join">加入房間</button>
+      <div class="divider">單人對戰電腦</div>
+      <div class="ai-row">
+        <button class="btn ai-btn d-easy" data-ai="easy">弱</button>
+        <button class="btn ai-btn d-normal" data-ai="normal">中</button>
+        <button class="btn ai-btn d-hard" data-ai="hard">強</button>
+        <button class="btn ai-btn d-nightmare" data-ai="nightmare">夢魘</button>
+      </div>
       <div class="error" data-err>${message ? esc(message) : ''}</div>
     </div>`);
   const name = el.querySelector<HTMLInputElement>('#name')!;
@@ -62,6 +69,16 @@ export function showMenu(message?: string): void {
     if (!res.ok) err.textContent = errText(res.error);
     else window.dispatchEvent(new CustomEvent('hillduel:route'));
   });
+  el.querySelectorAll<HTMLButtonElement>('[data-ai]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      lock(true);
+      err.textContent = '';
+      const res = await store.net.createAiRoom(name.value.trim(), b.dataset.ai as AiDifficulty);
+      lock(false);
+      if (!res.ok) err.textContent = errText(res.error);
+      else window.dispatchEvent(new CustomEvent('hillduel:route'));
+    }),
+  );
   const join = async () => {
     const c = code.value.trim().toUpperCase();
     if (c.length < 4) {

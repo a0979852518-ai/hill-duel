@@ -1,6 +1,6 @@
 // 房間管理：產生房號、建立/加入/重連，以及把 socket 事件分派到對應房間。
 
-import type { Ack, ErrorCode, JoinResult } from '../../shared/types.js';
+import type { Ack, AiDifficulty, ErrorCode, JoinResult } from '../../shared/types.js';
 import { Room, type GameSocket, type IO } from './Room.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 去掉容易看錯的 0/O/1/I
@@ -44,6 +44,18 @@ export class RoomManager {
       this.rooms.set(code, room);
       const { seat, token } = room.addPlayer(cleanName(p?.name), socket);
       ack?.({ ok: true, code, seat, token } satisfies { ok: true } & JoinResult);
+    });
+
+    socket.on('room:createAi', (p, ack) => {
+      const diffs: AiDifficulty[] = ['easy', 'normal', 'hard', 'nightmare'];
+      const difficulty = diffs.includes(p?.difficulty) ? p.difficulty : 'normal';
+      this.leaveCurrent(socket);
+      const code = this.generateCode();
+      const room = new Room(code, this.io, (c) => this.rooms.delete(c));
+      this.rooms.set(code, room);
+      const { seat, token } = room.addPlayer(cleanName(p?.name), socket);
+      room.addBot(difficulty);
+      ack?.({ ok: true, code, seat, token });
     });
 
     socket.on('room:join', (p, ack) => {

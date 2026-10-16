@@ -79,6 +79,13 @@ h2 { margin: 0 0 16px; text-align: center; }
 .divider { display: flex; align-items: center; gap: 10px; margin: 18px 0; opacity: 0.5; font-size: 13px; }
 .divider::before, .divider::after { content: ''; flex: 1; height: 2px; background: var(--ink); opacity: 0.3; }
 
+.ai-row { display: flex; gap: 8px; }
+.ai-row .btn { flex: 1; padding: 12px 4px; }
+.ai-btn.d-easy { background: #66bb6a; }
+.ai-btn.d-normal { background: #3d7bd8; }
+.ai-btn.d-hard { background: #e8743b; }
+.ai-btn.d-nightmare { background: #5b2a86; }
+
 .error { color: var(--bad); font-weight: 700; min-height: 1.4em; text-align: center; margin-top: 10px; font-size: 14px; }
 
 .room-code {

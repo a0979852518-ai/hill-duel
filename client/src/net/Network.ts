@@ -2,6 +2,7 @@
 
 import { io, type Socket } from 'socket.io-client';
 import type {
+  AiDifficulty,
   BattleEvent,
   ClientToServerEvents,
   ErrorCode,
@@ -102,6 +103,14 @@ export class Network {
   async createRoom(name: string) {
     saveName(name);
     const res = await this.call<JoinResult>('room:create', { name });
+    if (res.ok) this.setSession(res);
+    return res;
+  }
+
+  /** 單人對戰電腦 */
+  async createAiRoom(name: string, difficulty: AiDifficulty) {
+    saveName(name);
+    const res = await this.call<JoinResult>('room:createAi', { name, difficulty });
     if (res.ok) this.setSession(res);
     return res;
   }

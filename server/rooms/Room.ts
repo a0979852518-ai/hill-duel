@@ -5,6 +5,7 @@ import type { Server, Socket } from 'socket.io';
 import { getCharacter } from '../../shared/config/characters.js';
 import { ARENA, GAME_CONFIG } from '../../shared/config/game.js';
 import type {
+  AiDifficulty,
   ClientToServerEvents,
   ErrorCode,
   PlayerView,
@@ -13,7 +14,9 @@ import type {
   Seat,
   ServerToClientEvents,
 } from '../../shared/types.js';
+import { AiPlayer, AI_PROFILES } from '../game/AiPlayer.js';
 import { Battle } from '../game/Battle.js';
+import { CHARACTERS } from '../../shared/config/characters.js';
 
 export type IO = Server<ClientToServerEvents, ServerToClientEvents>;
 export type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -31,6 +34,8 @@ interface RoomPlayer {
   characterId: string | null;
   confirmed: boolean;
   dropTimer: NodeJS.Timeout | null;
+  /** 電腦玩家 */
+  bot?: AiDifficulty;
 }
 
 export class Room {
@@ -40,6 +45,7 @@ export class Room {
   winnerSeat: Seat | null = null;
   endReason: 'hp' | 'forfeit' | null = null;
   private cleanupTimer: NodeJS.Timeout | null = null;
+  private ai: AiPlayer | null = null;
 
   constructor(
     readonly code: string,
@@ -72,6 +78,25 @@ export class Room {
     if (this.players[0] && this.players[1] && this.status === 'waiting') this.status = 'characterSelect';
     this.broadcast();
     return { seat, token: player.token };
+  }
+
+  /** 加入電腦玩家（坐 1 號位，隨機角色，直接確認） */
+  addBot(difficulty: AiDifficulty): void {
+    const pool = CHARACTERS.filter((c) => c.enabled !== false);
+    const c = pool[Math.floor(Math.random() * pool.length)];
+    this.players[1] = {
+      seat: 1,
+      name: `電腦・${AI_PROFILES[difficulty].label}`,
+      token: randomUUID(),
+      socketId: null,
+      connected: true,
+      characterId: c.id,
+      confirmed: true,
+      dropTimer: null,
+      bot: difficulty,
+    };
+    if (this.players[0] && this.status === 'waiting') this.status = 'characterSelect';
+    this.broadcast();
   }
 
   findSeatByToken(token: string): Seat | null {
@@ -131,6 +156,7 @@ export class Room {
       this.players[seat] = null;
       if (this.status === 'characterSelect') {
         this.status = 'waiting';
+        // 跟電腦對戰時真人離開 → 房間直接關掉
         for (const other of this.players) if (other) other.confirmed = false;
       }
     }
@@ -182,6 +208,12 @@ export class Room {
       },
     });
     const first: Seat = GAME_CONFIG.firstTurn === 'host' ? 0 : Math.random() < 0.5 ? 0 : 1;
+    for (const p of this.players) {
+      if (!p?.bot) continue;
+      this.ai = new AiPlayer(this.battle, p.seat, p.bot, (angle, power) =>
+        this.io.to(this.code).emit('game:event', { type: 'aimPreview', seat: p.seat, angle, power }),
+      );
+    }
     this.broadcast();
     this.battle.start(first);
   }
@@ -203,6 +235,7 @@ export class Room {
         maxHp,
         statuses: f ? f.statuses.map((s) => ({ ...s })) : [],
         x: f?.x ?? ARENA.characterStartX[p.seat],
+        ...(p.bot ? { bot: p.bot } : {}),
       };
     }) as RoomSnapshot['players'];
     return {
@@ -218,12 +251,14 @@ export class Room {
 
   broadcast(): void {
     this.io.to(this.code).emit('room:state', this.snapshot());
+    // 狀態一改變就讓電腦看看是不是輪到它（setTimeout 0：等目前的操作整個處理完）
+    if (this.ai) setTimeout(() => this.ai?.poke(), 0);
   }
 
   // ------------------------------------------------------------ 清理
 
   private scheduleCleanupIfEmpty(): void {
-    const anyone = this.players.some((p) => p && (p.connected || p.dropTimer));
+    const anyone = this.players.some((p) => p && !p.bot && (p.connected || p.dropTimer));
     if (!anyone) this.scheduleCleanup(0);
   }
 
@@ -239,6 +274,8 @@ export class Room {
 
   destroy(): void {
     this.cancelCleanup();
+    this.ai?.dispose();
+    this.ai = null;
     this.battle?.dispose();
     for (const p of this.players) if (p?.dropTimer) clearTimeout(p.dropTimer);
     this.io.to(this.code).emit('room:closed', { reason: '房間已關閉' });

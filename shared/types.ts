@@ -45,7 +45,12 @@ export interface PlayerView {
   statuses: StatusView[];
   /** 角色腳底目前的 x（會被擊退而改變） */
   x: number;
+  /** 電腦玩家的難度（真人沒有） */
+  bot?: AiDifficulty;
 }
+
+/** 電腦玩家難度：弱 / 中 / 強 / 夢魘 */
+export type AiDifficulty = 'easy' | 'normal' | 'hard' | 'nightmare';
 
 export interface DefenseView {
   uid: string;
@@ -222,6 +227,8 @@ export interface JoinResult {
 export interface ClientToServerEvents {
   'room:create': (p: { name: string }, ack: Ack<JoinResult>) => void;
   'room:join': (p: { code: string; name: string }, ack: Ack<JoinResult>) => void;
+  /** 單人對戰電腦 */
+  'room:createAi': (p: { name: string; difficulty: AiDifficulty }, ack: Ack<JoinResult>) => void;
   'room:resume': (p: { code: string; token: string }, ack: Ack<JoinResult>) => void;
   'room:leave': () => void;
   'char:select': (p: { characterId: string }, ack: Ack) => void;

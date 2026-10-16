@@ -44,6 +44,7 @@ interface DefenseBodyInfo {
   wearable: boolean;
   /** 圖片中心相對剛體質心的偏移（剛體角度為 0 時） */
   offset: { x: number; y: number };
+  def: DefenseDef;
 }
 
 /**
@@ -172,6 +173,22 @@ export class PhysicsWorld {
     Composite.add(this.engine.world, statics);
   }
 
+  /**
+   * 複製一份目前的物理世界（角色位置＋所有防禦道具的位置與角度），
+   * 給 AI 試算投擲用，不會影響真正的戰場。
+   */
+  clone(): PhysicsWorld {
+    const w = new PhysicsWorld([this.charX[0], this.charX[1]]);
+    for (const [uid, info] of this.defs) {
+      w.addDefense(uid, info.def, info.owner, info.body.position.x + info.offset.x, info.body.position.y + info.offset.y);
+      const nb = w.defs.get(uid)!.body;
+      Body.setPosition(nb, { x: info.body.position.x, y: info.body.position.y }, false);
+      Body.setAngle(nb, info.body.angle, false);
+      Sleeping.set(nb, true);
+    }
+    return w;
+  }
+
   getCharX(seat: Seat): number {
     return this.charX[seat];
   }
@@ -212,7 +229,7 @@ export class PhysicsWorld {
     }
     // 圖片中心（x,y）相對質心的偏移
     const offset = { x: x - body.position.x, y: y - body.position.y };
-    return { body, owner, offset, wearable: !!def.wearable };
+    return { body, owner, offset, wearable: !!def.wearable, def };
   }
 
   /** 這個位置放得下嗎（不能跟現有的東西重疊） */
@@ -612,6 +629,7 @@ export class PhysicsWorld {
     angleDeg: number,
     power: number,
     onImpact: (impact: ThrowImpact, impactSpeed: number, impactVel: { x: number; y: number }) => { remove: string[]; knock?: KnockRequest },
+    opts: { stopAtImpact?: boolean } = {},
   ): {
     frames: PhysicsFrames;
     impactFrame: number;
@@ -761,6 +779,8 @@ export class PhysicsWorld {
             Composite.remove(this.engine.world, proj);
             projGone = true;
           }
+          // AI 試算用：只要知道打到哪裡，不必模擬後續
+          if (opts.stopAtImpact) break;
         }
         // 彈跳/滾動到停下來、彈太多次或滾太久都沒打到東西 → 算落空
         if (!impact && groundHits > 0) {
