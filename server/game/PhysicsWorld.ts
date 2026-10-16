@@ -171,6 +171,8 @@ export class PhysicsWorld {
     const { w, h } = def.size;
     const opts = {
       friction: def.friction ?? PHYSICS.defense.friction,
+      // 靜摩擦低一點：疊起來被撞時容易滑開、垮掉
+      frictionStatic: def.wearable ? 0.8 : PHYSICS.defense.frictionStatic,
       restitution: PHYSICS.defense.restitution,
       // 穿戴型維持比較穩的舊物理（空氣阻力大一點，戴在頭上不容易晃掉）
       frictionAir: def.wearable ? 0.01 : PHYSICS.defense.frictionAir,
@@ -189,7 +191,8 @@ export class PhysicsWorld {
       const right = Bodies.rectangle(x + w / 2 - wall / 2, wallY, wall, wallH);
       body = Body.create({ parts: [capPart, left, right], ...opts });
     } else {
-      body = Bodies.rectangle(x, y, w, h, { ...opts, chamfer: { radius: Math.min(w, h) * 0.08 } });
+      // 圓角大一點：底部接觸面小，疊起來比較會晃、容易倒
+      body = Bodies.rectangle(x, y, w, h, { ...opts, chamfer: { radius: Math.min(w, h) * PHYSICS.defense.cornerRound } });
     }
     // 圖片中心（x,y）相對質心的偏移
     const offset = { x: x - body.position.x, y: y - body.position.y };
@@ -781,7 +784,10 @@ export class PhysicsWorld {
     const info = this.defs.get(uid);
     if (!info || info.wearable) return;
     const b = info.body;
-    Sleeping.set(b, false);
+    // 整堆都叫醒，讓上面/旁邊的東西跟著反應
+    this.wakeDefenses();
+    // 很輕的東西（香菸、卡片）也至少推得動一點
+    weightKg = Math.max(weightKg, DEFENSE_HIT.minKickKg);
     // 衝量（質量單位 × 像素/步）
     const jx = (DEFENSE_HIT.kick * weightKg * vel.x) / 60;
     const jy = (DEFENSE_HIT.kick * weightKg * vel.y * 0.5) / 60;
@@ -789,6 +795,6 @@ export class PhysicsWorld {
       ry = at.y - b.position.y;
     Body.setVelocity(b, { x: b.velocity.x + jx / b.mass, y: b.velocity.y + jy / b.mass });
     // Matter 的轉動慣量放大了 4 倍（比較穩），這裡補回來一些讓它容易被打倒
-    Body.setAngularVelocity(b, b.angularVelocity + (rx * jy - ry * jx) * b.inverseInertia * 2.5);
+    Body.setAngularVelocity(b, b.angularVelocity + (rx * jy - ry * jx) * b.inverseInertia * DEFENSE_HIT.spin);
   }
 }

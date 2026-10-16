@@ -320,7 +320,7 @@ export class PlacementOverlay {
     this.ghost = scene.add.image(0, 0, '__WHITE').setDepth(31).setAlpha(0.6).setVisible(false);
     this.dropLine = scene.add.graphics().setDepth(30);
     this.hint = scene.add
-      .text(0, 0, '', { fontFamily: FONT, fontSize: '16px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 5, align: 'center' })
+      .text(0, 0, '', { fontFamily: FONT, fontSize: '24px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 5, align: 'center' })
       .setOrigin(0.5, 1)
       .setDepth(31)
       .setVisible(false);
@@ -342,8 +342,9 @@ export class PlacementOverlay {
     const zone = this.zone.setPosition(z.x, z.y).setSize(z.w, z.h).setVisible(true);
     zone.setDisplaySize(z.w, z.h);
     this.scene.tweens.add({ targets: zone, alpha: { from: 0.55, to: 1 }, yoyo: true, repeat: -1, duration: 650 });
+    // 提示放在角色前上方（範圍很大，放在範圍頂端會被上方的血條擋住）
     this.hint
-      .setPosition(z.x + z.w / 2, z.y - 6)
+      .setPosition(feetX + (seat === 0 ? 1 : -1) * 420, ARENA.groundY - 430)
       .setText(
         interactive
           ? touch

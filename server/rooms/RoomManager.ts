@@ -87,44 +87,49 @@ export class RoomManager {
       };
 
     const battleOf = (room: Room) => (room.status === 'battle' ? room.battle : null);
+    // 注意：成功時 Battle 回傳 null，不能用 `?? 'WRONG_PHASE'`（null 也會被換成錯誤）
+    const withBattle = (room: Room, fn: (b: NonNullable<ReturnType<typeof battleOf>>) => ErrorCode | null): ErrorCode | null => {
+      const b = battleOf(room);
+      return b ? fn(b) : 'WRONG_PHASE';
+    };
 
     socket.on('char:select', withRoom((room, seat, p: { characterId: string }) => room.selectCharacter(seat, String(p?.characterId))));
     socket.on('char:confirm', withRoom((room, seat) => room.confirmCharacter(seat)));
-    socket.on('turn:stopSlot', withRoom((room, seat, p: { turnId: number }) => battleOf(room)?.stopSlot(seat, Number(p?.turnId)) ?? 'WRONG_PHASE'));
+    socket.on('turn:stopSlot', withRoom((room, seat, p: { turnId: number }) => withBattle(room, (b) => b.stopSlot(seat, Number(p?.turnId)))));
     socket.on(
       'turn:choose',
       withRoom((room, seat, p: { turnId: number; itemId: string }) =>
-        battleOf(room)?.choose(seat, Number(p?.turnId), String(p?.itemId)) ?? 'WRONG_PHASE',
+        withBattle(room, (b) => b.choose(seat, Number(p?.turnId), String(p?.itemId))),
       ),
     );
     socket.on(
       'turn:angle',
       withRoom((room, seat, p: { turnId: number; angle: number }) =>
-        battleOf(room)?.confirmAngle(seat, Number(p?.turnId), Number(p?.angle)) ?? 'WRONG_PHASE',
+        withBattle(room, (b) => b.confirmAngle(seat, Number(p?.turnId), Number(p?.angle))),
       ),
     );
     socket.on(
       'turn:power',
       withRoom((room, seat, p: { turnId: number; power: number }) =>
-        battleOf(room)?.confirmPower(seat, Number(p?.turnId), Number(p?.power)) ?? 'WRONG_PHASE',
+        withBattle(room, (b) => b.confirmPower(seat, Number(p?.turnId), Number(p?.power))),
       ),
     );
     socket.on(
       'turn:throw',
       withRoom((room, seat, p: { turnId: number; angle: number; power: number }) =>
-        battleOf(room)?.throwAt(seat, Number(p?.turnId), Number(p?.angle), Number(p?.power)) ?? 'WRONG_PHASE',
+        withBattle(room, (b) => b.throwAt(seat, Number(p?.turnId), Number(p?.angle), Number(p?.power))),
       ),
     );
     socket.on(
       'turn:place',
       withRoom((room, seat, p: { turnId: number; x: number; y: number }) =>
-        battleOf(room)?.placeDefense(seat, Number(p?.turnId), Number(p?.x), Number(p?.y)) ?? 'WRONG_PHASE',
+        withBattle(room, (b) => b.placeDefense(seat, Number(p?.turnId), Number(p?.x), Number(p?.y))),
       ),
     );
     socket.on(
       'turn:functional',
       withRoom((room, seat, p: { turnId: number; targetUid?: string }) =>
-        battleOf(room)?.useFunctional(seat, Number(p?.turnId), p?.targetUid ? String(p.targetUid) : undefined) ?? 'WRONG_PHASE',
+        withBattle(room, (b) => b.useFunctional(seat, Number(p?.turnId), p?.targetUid ? String(p.targetUid) : undefined)),
       ),
     );
 

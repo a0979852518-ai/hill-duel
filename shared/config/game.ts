@@ -69,9 +69,9 @@ export const ARENA = {
   /**
    * 防禦道具「放手位置」可選的區域，相對角色腳底：
    * back = 往身後多少、front = 往對手方向多少、top = 往上多高。
-   * 包含自己頭頂上方，所以鋼盔可以直接戴到頭上。
+   * 大小約等於放置時自己畫面看得到的範圍（鏡頭對準自己時），包含頭頂上方，鋼盔可以直接戴到頭上。
    */
-  placementZone: { back: 90, front: 330, top: 340 },
+  placementZone: { back: 350, front: 1200, top: 680 },
 } as const;
 
 /**
@@ -133,7 +133,7 @@ export const AIM_CONFIG = {
 /** 物理材質（Matter.js） */
 export const PHYSICS = {
   projectile: { friction: 0.35, restitution: 0.32, frictionAir: 0, density: 0.004 },
-  defense: { friction: 0.5, restitution: 0.08, frictionAir: 0.004, density: 0.002 },
+  defense: { friction: 0.35, frictionStatic: 0.45, restitution: 0.1, frictionAir: 0.003, density: 0.002, cornerRound: 0.16 },
   ground: { friction: 0.8, restitution: 0.1 },
   /** 命中後投擲物繼續彈跳/滾動的展示時間（毫秒） */
   afterImpactMs: 1100,
@@ -155,7 +155,11 @@ export const PHYSICS = {
  *  crushSpeed  道具撞到角色時至少要這麼快（像素/秒）才算「壓到」
  */
 export const DEFENSE_HIT = {
-  kick: 3.4,
+  kick: 4.6,
+  /** 推力至少用這個重量計算（輕的東西也推得動一點） */
+  minKickKg: 0.35,
+  /** 打點偏離中心時產生的旋轉強度（越大越容易被打倒） */
+  spin: 3.5,
   crushDamage: 30,
   crushSpeed: 120,
 } as const;
