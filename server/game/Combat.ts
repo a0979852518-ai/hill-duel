@@ -154,6 +154,7 @@ export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: 
   const vy = -speed * liftMul * (KNOCKBACK.lift * (1 + 0.6 * Math.min(0, rel)) + KNOCKBACK.sweepLift * Math.max(0, rel)) * (vel.y > 0 ? 0.8 : 1);
   // 力矩 = 打點相對中心的高度 × 推力；打在上面 → 頭往被推的方向轉
   // 加一點固定的往後倒旋轉，打在正中間也會翻倒
-  const omega = away * (-rel * KNOCKBACK.spin + KNOCKBACK.baseSpin) * speed * spinMul;
+  // 一律往後倒（被推的方向），打點離中心越遠轉越快；至少每秒轉 4.5 弧度，不會站著晃半天
+  const omega = away * Math.max(4.5, (Math.abs(rel) * KNOCKBACK.spin + KNOCKBACK.baseSpin) * speed * spinMul);
   return { seat, vx, vy, omega, stayDown, speed };
 }

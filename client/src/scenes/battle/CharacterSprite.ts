@@ -140,6 +140,14 @@ export class CharacterSprite {
     });
   }
 
+  /** 被打飛時的受傷效果：只閃白/紅，不換受傷照、不抖（動作交給被打飛的連續動作圖） */
+  hitFlash(): void {
+    if (this.base === 'dead') return;
+    this.img.setTintFill(0xffffff);
+    this.scene.time.delayedCall(70, () => this.img.setTint(0xff8a80));
+    this.scene.time.delayedCall(450, () => this.img.clearTint());
+  }
+
   /** 受傷：整個變白一瞬間 → 紅色 → 抖動（擊退本身由影格處理） */
   hurt(strong = false): void {
     if (this.base === 'dead') return;

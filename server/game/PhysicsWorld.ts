@@ -92,6 +92,8 @@ interface KnockState {
   /** 被打死了就不起來 */
   stayDown: boolean;
   done: boolean;
+  /** 曾經離開地面 */
+  airborne: boolean;
   /** 戴在頭上的穿戴型道具（鋼盔）：跟著身體一起翻滾，最後還戴在頭上 */
   worn: { body: any; rx: number; ry: number; a0: number }[];
   /** 每格 [腳底x, 腳底y-地面, 角度, 身體左右翻面(1 ~ -1)] */
@@ -313,6 +315,7 @@ export class PhysicsWorld {
       endX: x,
       stayDown: req.stayDown,
       done: false,
+      airborne: false,
       worn,
       // 補齊命中前的影格（站著不動）
       frames: Array.from({ length: frames.count }, () => [x, 0, 0, 1, 0] as Pose5),
@@ -382,14 +385,23 @@ export class PhysicsWorld {
       }
       const slow = b.speed < 0.08 && Math.abs(b.angularVelocity) < 0.004;
       k.restSteps = slow || b.isSleeping ? k.restSteps + 1 : 0;
-      if (k.restSteps > 12 || k.t * 1000 > KNOCKBACK.maxTumbleMs) {
+      // 身體最低點離地多高（直立時是腳、躺著時是背）
+      const lowest = b.position.y + Math.abs(Math.cos(b.angle)) * (TUMBLE.h / 2) + Math.abs(Math.sin(b.angle)) * (TUMBLE.w / 2);
+      if (lowest < ARENA.groundY - 10) k.airborne = true;
+      const landed = k.airborne && lowest >= ARENA.groundY - 4 && b.velocity.y >= -0.5;
+      // 落地那一刻就接著在地上滾（不要先在地上慢慢滑到停才開始滾）；
+      // 沒被打離地的話，倒下去（傾斜超過 60°）就開始滾
+      const fallen = !k.airborne && (Math.abs(Math.sin(b.angle)) > 0.85 || k.t > 0.45);
+      if (landed || fallen || k.restSteps > 12 || k.t * 1000 > KNOCKBACK.maxTumbleMs) {
+        // 落地時還剩多少水平速度 → 決定滾幾圈
+        k.speed = Math.max(k.speed * 0.45, Math.abs(b.velocity.x) * 60);
         k.com = { x: b.position.x, y: b.position.y };
         k.angle0 = Math.atan2(Math.sin(b.angle), Math.cos(b.angle));
         Composite.remove(this.engine.world, b);
         // 躺平的角度：往哪邊倒比較近就倒哪邊（±90°）
         k.lieAngle = k.angle0 >= 0 ? Math.PI / 2 : -Math.PI / 2;
         // 力道越大在地上滾越多圈（每個半圈會彈一下）
-        let n = k.speed > 900 ? 6 : k.speed > 650 ? 5 : k.speed > 400 ? 4 : 3;
+        let n = k.speed > 700 ? 6 : k.speed > 500 ? 5 : k.speed > 320 ? 4 : 3;
         // 滾不出可移動範圍
         const maxRoll = k.away < 0 ? k.com.x - range[0] : range[1] - k.com.x;
         while (n > 0 && n * this.rollStep() > maxRoll) n--;
@@ -436,7 +448,7 @@ export class PhysicsWorld {
 
   /** 在地上滾的總時間（越滾越慢） */
   private rollMs(k: KnockState): number {
-    let ms = 160; // 先躺平
+    let ms = 40; // 落地後馬上開始滾
     for (let i = 0; i < k.halfRolls; i++) ms += KNOCKBACK.rollHalfMs * (1 + i * 0.25);
     return ms;
   }
@@ -456,7 +468,7 @@ export class PhysicsWorld {
       // 縮成一團在地上往後滾（圖 3、4 交替，整團跟著轉），每滾半圈彈一下
       const ms = k.t * 1000;
       let progress = 0; // 已經滾了幾個半圈（含小數）
-      let left = ms - 160;
+      let left = ms - 40;
       let hop = 0;
       for (let i = 0; i < k.halfRolls && left > 0; i++) {
         const d = KNOCKBACK.rollHalfMs * (1 + i * 0.25);

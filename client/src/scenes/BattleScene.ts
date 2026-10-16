@@ -329,8 +329,12 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
+  /** 這次投擲會被打飛的座位（被打飛的人不顯示受傷照，直接接連續動作） */
+  private knockedSeats = new Set<Seat>();
+
   private hitCharacter(seat: Seat, strong = false): void {
-    this.chars[seat]?.hurt(strong);
+    if (this.knockedSeats.has(seat)) this.chars[seat]?.hitFlash();
+    else this.chars[seat]?.hurt(strong);
   }
 
   // ------------------------------------------------------------ 動畫佇列
@@ -658,6 +662,7 @@ export class BattleScene extends Phaser.Scene {
     for (const u of e.defenseUpdates) reasons[u.uid] = u;
     let flying = true;
     const knocked = Object.entries(e.frames.c ?? {})[0];
+    this.knockedSeats = new Set(Object.keys(e.frames.c ?? {}).map((k) => Number(k) as Seat));
     await this.playFrames(e.frames, {
       proj,
       trail,
@@ -685,6 +690,7 @@ export class BattleScene extends Phaser.Scene {
       },
     });
     this.speedLines.stop();
+    this.knockedSeats.clear();
     proj.destroy();
     this.tweens.add({ targets: trail, alpha: 0, duration: 400, onComplete: () => trail.destroy() });
     // 沒被影格處理到的（例如沒被打壞但扣了次數）更新標籤
