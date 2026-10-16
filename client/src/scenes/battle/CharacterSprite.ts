@@ -60,7 +60,8 @@ export class CharacterSprite {
     this.x = x;
     this.standHeight = getCharacter(charId)?.standHeight ?? 150;
     this.root = scene.add.container(x, ARENA.groundY).setDepth(20);
-    this.shadow = scene.add.ellipse(0, 2, 90, 16, 0x000000, 0.25);
+    // 影子跟身高成比例（連恩比較矮）
+    this.shadow = scene.add.ellipse(0, 2, (90 * this.standHeight) / 150, 16, 0x000000, 0.25);
     // body 負責「被擊退時的傾斜/彈起」，以腳底為軸心
     this.body = scene.add.container(0, 0);
     this.img = scene.add.image(0, 0, poseTexture(scene, charId, 'idle').key).setOrigin(0.5, 1).setFlipX(seat === 1);
