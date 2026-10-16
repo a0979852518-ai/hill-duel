@@ -196,7 +196,15 @@ export const CHARACTERS: CharacterDef[] = [
     name: '連恩',
     maxHp: 80,
     description: '矮小的 Maya 剋星',
-    // 還沒有照片：先用程式畫的人形（矮 2/3）。有照片後照其他角色填 portrait / poses / knockFrames
+    portrait: 'assets/characters/lianen/portrait.png',
+    poses: {
+      idle: 'assets/characters/lianen/idle.png',
+      throw: 'assets/characters/lianen/throw.png',
+      hurt: 'assets/characters/lianen/hurt.png',
+      dead: 'assets/characters/lianen/dead.png',
+    },
+    knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/lianen/knock${i}.png`),
+    // 矮小：一般角色 150 → 100
     standHeight: 100,
     bodyScale: 2 / 3,
     traits: {
