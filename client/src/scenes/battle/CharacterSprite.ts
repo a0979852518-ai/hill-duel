@@ -6,7 +6,7 @@ import * as Phaser from 'phaser';
 import { getCharacter, type Pose } from '../../../../shared/config/characters.js';
 import { ARENA } from '../../../../shared/config/game.js';
 import type { Seat } from '../../../../shared/types.js';
-import { poseTexture } from '../../game/assets.js';
+import { knockKey, poseTexture } from '../../game/assets.js';
 import { FONT } from './effects.js';
 
 /** 各姿勢相對「站姿高度」的大小：h = 以高度為準，w = 以寬度為準 */
@@ -71,6 +71,7 @@ export class CharacterSprite {
 
   /** 直接放到某個位置（快照同步用） */
   placeAt(x: number): void {
+    this.endKnock();
     this.x = x;
     this.root.x = x;
     this.body.setPosition(0, 0).setRotation(0);
@@ -79,17 +80,46 @@ export class CharacterSprite {
   }
 
   /** 擊退影格：腳底 x、離地位移（負 = 往上）、傾斜角 */
-  setKnockPose(x: number, yOff: number, tilt: number, flip = 1): void {
+  setKnockPose(x: number, yOff: number, tilt: number, flip = 1, frame = 0): void {
     this.x = x;
     this.root.x = x;
     this.body.y = yOff;
     this.body.rotation = tilt;
-    // 在地上滾的時候身體翻面（側面看會變薄再翻過來）
-    this.body.scaleX = Math.abs(flip) < 0.08 ? Math.sign(flip || 1) * 0.08 : flip;
+    const useFrame = frame > 0 && this.scene.textures.exists(knockKey(this.charId, frame));
+    if (useFrame) {
+      // 用被打飛的連續動作圖（往後仰 → 往後倒 → 滾 → 躺）
+      this.showKnockFrame(frame);
+      this.body.scaleX = 1;
+    } else {
+      if (this.knockFrame) this.endKnock();
+      // 沒有連續動作圖的角色：在地上滾的時候身體翻面（側面看會變薄再翻過來）
+      this.body.scaleX = Math.abs(flip) < 0.08 ? Math.sign(flip || 1) * 0.08 : flip;
+    }
     // 影子跟著身體中心，離地越高越小越淡
     const h = Math.max(0, -yOff);
     this.shadow.x = Math.sin(tilt) * this.standHeight * 0.5;
     this.shadow.setScale(Math.max(0.4, 1 - h / 400) * (1 + Math.abs(Math.sin(tilt)) * 0.8), 1).setAlpha(Math.max(0.08, 0.25 - h / 1200));
+  }
+
+  /** 目前顯示的連續動作圖（0 = 沒有） */
+  private knockFrame = 0;
+
+  private showKnockFrame(n: number): void {
+    if (this.knockFrame === n) return;
+    this.knockFrame = n;
+    this.current = null;
+    this.img.setTexture(knockKey(this.charId, n));
+    // 5 張圖用同一個比例：第 1 張的高度 = 站姿高度
+    const first = this.scene.textures.get(knockKey(this.charId, 1)).getSourceImage() as { height: number };
+    this.img.setScale(this.standHeight / Math.max(1, first.height));
+  }
+
+  /** 結束連續動作，回到一般姿勢 */
+  private endKnock(): void {
+    if (!this.knockFrame) return;
+    this.knockFrame = 0;
+    this.current = null;
+    this.apply(this.base === 'dead' ? 'dead' : this.base);
   }
 
   /** 設定常態姿勢（待機 / 瞄準中）；受傷動畫進行中會等它結束再套用 */
@@ -131,6 +161,8 @@ export class CharacterSprite {
   die(animate = true): void {
     this.overrideTimer?.remove();
     this.overrideTimer = null;
+    this.knockFrame = 0;
+    this.current = null;
     this.base = 'dead';
     this.breath?.stop();
     this.breath = null;
@@ -152,6 +184,7 @@ export class CharacterSprite {
   }
 
   private apply(pose: Pose): void {
+    if (this.knockFrame) return; // 被打飛的動作播放中，不換圖
     if (this.current === pose) return;
     this.current = pose;
     const { key } = poseTexture(this.scene, this.charId, pose);

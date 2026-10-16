@@ -28,6 +28,12 @@ export interface CharacterDef {
   portrait?: string;
   /** 戰鬥中各種姿勢的圖 */
   poses?: Partial<Record<Pose, string>>;
+  /**
+   * 被打飛的連續動作圖（5 張，面向右、往左邊被打飛）：
+   *  1 被打到往後仰  2 往後倒  3、4 在地上往後滾  5 躺平
+   * 5 張要用同一個縮放比例存（第 1 張的高度 = 站姿高度）
+   */
+  knockFrames?: string[];
   /** 站姿在畫面上的高度（像素），其他姿勢依比例換算；預設 150 */
   standHeight?: number;
   /** 沒有圖片時的臨時外觀 */
@@ -47,6 +53,7 @@ export const CHARACTERS: CharacterDef[] = [
       // hurt: 'assets/characters/lixinan/hurt.png',   ← 有受傷照後取消註解
       dead: 'assets/characters/lixinan/dead.png',
     },
+    knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/lixinan/knock${i}.png`),
     placeholder: { color: 0x222222, accent: 0xf1d3b8 },
   },
   {
@@ -61,6 +68,7 @@ export const CHARACTERS: CharacterDef[] = [
       // hurt: 'assets/characters/zhenglinze/hurt.png',
       dead: 'assets/characters/zhenglinze/dead.png',
     },
+    knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/zhenglinze/knock${i}.png`),
     placeholder: { color: 0xbdb6aa, accent: 0xf1d3b8 },
   },
   {
@@ -75,6 +83,7 @@ export const CHARACTERS: CharacterDef[] = [
       hurt: 'assets/characters/yebingcheng/hurt.png',
       dead: 'assets/characters/yebingcheng/dead.png',
     },
+    knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/yebingcheng/knock${i}.png`),
     placeholder: { color: 0xe8e6ea, accent: 0xf1d3b8 },
   },
 

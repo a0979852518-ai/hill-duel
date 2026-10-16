@@ -7,6 +7,8 @@ import { ITEMS, type ItemDef, type ItemPlaceholder } from '../../../shared/confi
 
 /** 角色某個姿勢的貼圖 key（idle 一定存在，其他姿勢可能沒有） */
 export const charKey = (id: string, pose: Pose = 'idle') => `char:${id}:${pose}`;
+/** 被打飛連續動作的第 n 張（1~5） */
+export const knockKey = (id: string, n: number) => `char:${id}:knock${n}`;
 
 /** 取得可用的姿勢貼圖：沒有這個姿勢就退回 idle */
 export function poseTexture(scene: Phaser.Scene, id: string, pose: Pose): { key: string; exact: boolean } {
@@ -21,8 +23,11 @@ export const HIDDEN_ICON = 'icon:__hidden';
 
 /** 在 preload() 裡呼叫 */
 export function queueAssets(scene: Phaser.Scene): void {
-  for (const c of CHARACTERS)
+  for (const c of CHARACTERS) {
+    if (c.enabled === false) continue;
     for (const [pose, src] of Object.entries(c.poses ?? {})) if (src) scene.load.image(charKey(c.id, pose as Pose), src);
+    c.knockFrames?.forEach((src, i) => scene.load.image(knockKey(c.id, i + 1), src));
+  }
   for (const i of ITEMS) {
     if (i.enabled === false) continue; // 停用的道具不載入圖片（不出現在遊戲裡）
     if (i.icon) scene.load.image(iconKey(i.id), i.icon);

@@ -552,8 +552,10 @@ export class BattleScene extends Phaser.Scene {
             b = arr[k - 1],
             c = arr[k - 2];
           // 身體中心的高度（腳底位移 + 身體轉動造成的變化）
-          const cy = (f: number[]) => f[1] - Math.cos(f[2]) * 75;
-          const cx = (f: number[]) => f[0] + Math.sin(f[2]) * 75;
+          // 身體中心離腳底（圖的底部）多遠：縮成一團滾的時候比較小
+          const L = (f: number[]) => (f[4] === 3 || f[4] === 4 ? 52 : f[4] === 5 ? 33 : 75);
+          const cy = (f: number[]) => f[1] - Math.cos(f[2]) * L(f);
+          const cx = (f: number[]) => f[0] + Math.sin(f[2]) * L(f);
           const vPrev = cy(b) - cy(c),
             vNow = cy(a) - cy(b);
           const low = cy(a) > -95;
@@ -594,7 +596,9 @@ export class BattleScene extends Phaser.Scene {
           for (const [seatKey, arr] of Object.entries(frames.c ?? {})) {
             if (!arr || arr.length === 0) continue;
             const [x, y, a, flip] = pose(arr, v);
-            this.chars[Number(seatKey) as Seat]?.setKnockPose(x, y, a, flip ?? 1);
+            // 動作圖編號不能內插，取目前這一格的
+            const fr = arr[Math.min(arr.length - 1, Math.floor(v))][4] ?? 0;
+            this.chars[Number(seatKey) as Seat]?.setKnockPose(x, y, a, flip ?? 1, fr);
           }
           if (opts.proj && frames.p) {
             if (v < frames.p.length - 1 || (frames.p.length === 1 && v < 1)) {
@@ -672,7 +676,7 @@ export class BattleScene extends Phaser.Scene {
         // 命中後鏡頭跟著被打飛的人
         if (!flying && knocked && k > e.impactFrame + 4) {
           const f = knocked[1]![Math.min(k, knocked[1]!.length - 1)];
-          this.director.set({ x: f[0] + Math.sin(f[2]) * 75, y: this.director.restY(CAMERA.followZoom), zoom: CAMERA.followZoom, rate: 3.5 });
+          this.director.set({ x: f[0] + Math.sin(f[2]) * (f[4] === 3 || f[4] === 4 ? 52 : 75), y: this.director.restY(CAMERA.followZoom), zoom: CAMERA.followZoom, rate: 3.5 });
         }
         if (k !== e.impactFrame) return;
         flying = false;

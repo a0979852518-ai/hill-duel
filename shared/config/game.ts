@@ -49,16 +49,16 @@ export const ARENA = {
   /** 單次投擲最多模擬幾秒，避免無限飛行 */
   maxFlightSeconds: 8,
   /** 超出這個範圍就算飛出場外 */
-  outOfBounds: { minX: -250, maxX: 4650, maxY: 1180 },
+  outOfBounds: { minX: -1000, maxX: 5400, maxY: 1180 },
   /** 角色起始位置（腳底 x） */
   characterStartX: [900, 3500],
   /**
    * 角色被擊退後最遠能到的位置（腳底 x）。快到邊緣時翻滾會被「煞車」慢慢停下，
-   * 確保雙方距離不會超過投擲物的最遠射程（約 340 m）。
+   * 確保雙方距離不會超過投擲物的最遠射程（約 380 m）。
    */
   characterXRange: [
-    [500, 2100],
-    [2300, 3900],
+    [300, 2100],
+    [2300, 4100],
   ],
   /** 角色受擊判定框大小（以腳底中心為基準往上；配合 150px 高的真人站姿） */
   characterHitbox: { w: 56, h: 150 },
@@ -80,9 +80,9 @@ export const ARENA = {
  */
 export const KNOCKBACK = {
   /** 擊退初速 = k × √(重量kg) × (命中速度 / 1500)（像素/秒） */
-  k: 450,
+  k: 750,
   /** 擊退初速上限 */
-  maxSpeed: 850,
+  maxSpeed: 1200,
   /** 低於這個初速只會晃一下，不會被打飛 */
   minSpeed: 110,
   /** 爆頭額外倍率 */
@@ -94,7 +94,7 @@ export const KNOCKBACK = {
   /** 打點偏離中心時，線速度損失的比例（力量變成旋轉） */
   offCenterLoss: 0.45,
   /** 往上彈的比例（打中腳時再加 sweepLift） */
-  lift: 0.3,
+  lift: 0.4,
   sweepLift: 0.3,
   /** 翻滾身體的物理材質 */
   restitution: 0.3,
@@ -105,7 +105,10 @@ export const KNOCKBACK = {
   /** 倒地後躺多久、起身花多久（毫秒） */
   lieMs: 550,
   /** 落地後在地上滾一圈半圈的時間（每半圈，毫秒） */
-  rollHalfMs: 210,
+  rollHalfMs: 190,
+  /** 每滾半圈往前多少、彈多高（像素） */
+  rollStep: 62,
+  rollHop: 34,
   getupMs: 750,
 } as const;
 

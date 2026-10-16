@@ -53,7 +53,21 @@ interface DefenseBodyInfo {
  *  lie    趴著停一下
  *  getup  撐起來站好
  */
-type Pose4 = [number, number, number, number];
+/** [腳底x, 腳底y-地面, 角度, 身體翻面(1~-1), 連續動作第幾張(0 = 一般姿勢, 1~5 = 被打飛的圖)] */
+type Pose5 = [number, number, number, number, number];
+
+/**
+ * 被打飛連續動作圖的大小（相對站姿高度）與頭的位置（相對圖片框，往左被打飛的方向；往右時左右鏡像），
+ * 用來讓頭上的鋼盔跟著頭走。
+ */
+const KNOCK_FRAMES: Record<number, { w: number; h: number; hx: number; hy: number; ha: number }> = {
+  1: { w: 0.64, h: 1, hx: 0.15, hy: 0.1, ha: 0 },
+  2: { w: 0.8, h: 0.85, hx: 0.13, hy: 0.13, ha: -0.3 },
+  3: { w: 0.55, h: 0.74, hx: 0.38, hy: 0.86, ha: Math.PI },
+  4: { w: 0.5, h: 0.66, hx: 0.16, hy: 0.77, ha: Math.PI },
+  5: { w: 0.83, h: 0.44, hx: 0.12, hy: 0.48, ha: -Math.PI / 2 },
+};
+const STAND_H = 150;
 interface KnockState {
   seat: Seat;
   body: any;
@@ -72,7 +86,7 @@ interface KnockState {
   /** 在地上滾幾個半圈 */
   halfRolls: number;
   /** 進入起身階段時的姿勢 */
-  from: Pose4;
+  from: Pose5;
   /** 站起來的腳底 x */
   endX: number;
   /** 被打死了就不起來 */
@@ -81,7 +95,7 @@ interface KnockState {
   /** 戴在頭上的穿戴型道具（鋼盔）：跟著身體一起翻滾，最後還戴在頭上 */
   worn: { body: any; rx: number; ry: number; a0: number }[];
   /** 每格 [腳底x, 腳底y-地面, 角度, 身體左右翻面(1 ~ -1)] */
-  frames: Pose4[];
+  frames: Pose5[];
 }
 
 /** 擊退參數（由 Combat 依打點與投擲物算出） */
@@ -295,13 +309,13 @@ export class PhysicsWorld {
       angle0: 0,
       lieAngle: 0,
       halfRolls: 0,
-      from: [x, 0, 0, 1],
+      from: [x, 0, 0, 1, 0],
       endX: x,
       stayDown: req.stayDown,
       done: false,
       worn,
       // 補齊命中前的影格（站著不動）
-      frames: Array.from({ length: frames.count }, () => [x, 0, 0, 1] as Pose4),
+      frames: Array.from({ length: frames.count }, () => [x, 0, 0, 1, 0] as Pose5),
     };
     frames.c ??= {};
     frames.c[String(seat) as '0' | '1'] = k.frames;
@@ -309,9 +323,8 @@ export class PhysicsWorld {
   }
 
   /** 由身體中心、角度換算成 [腳底x, 腳底y-地面, 角度, 翻面] */
-  private poseFromCom(cx: number, cy: number, a: number, flip: number): Pose4 {
-    const half = TUMBLE.h / 2;
-    return [cx - Math.sin(a) * half, cy + Math.cos(a) * half - ARENA.groundY, a, flip];
+  private poseFromCom(cx: number, cy: number, a: number, flip: number, frame = 0, half = TUMBLE.h / 2): Pose5 {
+    return [cx - Math.sin(a) * half, cy + Math.cos(a) * half - ARENA.groundY, a, flip, frame];
   }
 
   private stepKnock(k: KnockState, dt: number): void {
@@ -324,7 +337,17 @@ export class PhysicsWorld {
   /** 鋼盔跟著頭：腳底位置＋身體旋轉後的相對位置 */
   private updateWorn(k: KnockState): void {
     if (!k.worn.length) return;
-    const [fx, fy, a] = k.done ? [k.endX, 0, 0] : this.knockPose(k);
+    const pose: Pose5 = k.done ? [k.endX, 0, 0, 1, 0] : this.knockPose(k);
+    const head = this.headOf(k, pose);
+    if (head) {
+      // 縮成一團滾 / 躺著：鋼盔貼在頭上
+      for (const w of k.worn) {
+        Body.setPosition(w.body, { x: head[0], y: head[1] }, false);
+        Body.setAngle(w.body, head[2], false);
+      }
+      return;
+    }
+    const [fx, fy, a] = pose;
     const c = Math.cos(a),
       sn = Math.sin(a);
     for (const w of k.worn) {
@@ -365,18 +388,12 @@ export class PhysicsWorld {
         Composite.remove(this.engine.world, b);
         // 躺平的角度：往哪邊倒比較近就倒哪邊（±90°）
         k.lieAngle = k.angle0 >= 0 ? Math.PI / 2 : -Math.PI / 2;
-        // 照片面向對手：左邊玩家 +90° 是臉朝下（趴），右邊玩家（左右翻轉）-90° 是趴
-        const proneAngle = k.seat === 0 ? Math.PI / 2 : -Math.PI / 2;
-        const prone = Math.sign(k.lieAngle) === Math.sign(proneAngle);
-        // 力道越大滾越多圈；最後一定是趴著（半圈數：仰躺要奇數、已經趴著要偶數）
-        let n = k.speed > 500 ? 4 : k.speed > 300 ? 3 : 2;
-        if (prone ? n % 2 === 1 : n % 2 === 0) n += 1;
-        if (n > 4) n -= 2;
-        k.halfRolls = n;
-        // 滾不出場地
+        // 力道越大在地上滾越多圈（每個半圈會彈一下）
+        let n = k.speed > 900 ? 6 : k.speed > 650 ? 5 : k.speed > 400 ? 4 : 3;
+        // 滾不出可移動範圍
         const maxRoll = k.away < 0 ? k.com.x - range[0] : range[1] - k.com.x;
-        while (k.halfRolls > 0 && k.halfRolls * this.rollStep() > maxRoll) k.halfRolls -= 2;
-        if (k.halfRolls < 0) k.halfRolls = 0;
+        while (n > 0 && n * this.rollStep() > maxRoll) n--;
+        k.halfRolls = n;
         k.phase = 'roll';
         k.t = 0;
       }
@@ -386,6 +403,7 @@ export class PhysicsWorld {
       if (k.t * 1000 >= this.rollMs(k)) {
         k.from = this.knockPose(k);
         k.endX = Math.min(range[1], Math.max(range[0], k.com.x + k.away * k.halfRolls * this.rollStep()));
+        k.from = [k.endX, 0, 0, 1, 5];
         k.phase = 'lie';
         k.t = 0;
       }
@@ -413,7 +431,7 @@ export class PhysicsWorld {
 
   /** 每滾半圈前進多少（人不是圓柱，比身體厚度的半圓周短一些） */
   private rollStep(): number {
-    return 38;
+    return KNOCKBACK.rollStep;
   }
 
   /** 在地上滾的總時間（越滾越慢） */
@@ -431,48 +449,58 @@ export class PhysicsWorld {
     this.charX[seat] = x;
   }
 
-  private knockPose(k: KnockState): Pose4 {
+  private knockPose(k: KnockState): Pose5 {
     const G = ARENA.groundY;
-    if (k.phase === 'tumble') return this.poseFromCom(k.body.position.x, k.body.position.y, k.body.angle, 1);
+    if (k.phase === 'tumble') return this.poseFromCom(k.body.position.x, k.body.position.y, k.body.angle, 1, k.t < 0.12 ? 1 : 2);
     if (k.phase === 'roll') {
+      // 縮成一團在地上往後滾（圖 3、4 交替，整團跟著轉），每滾半圈彈一下
       const ms = k.t * 1000;
-      const lieY = G - 13; // 照片裡的人比碰撞身體薄，貼地一點
-      // 1) 先躺平（160ms）
-      const f0 = Math.min(1, ms / 160);
-      const e0 = f0 * f0 * (3 - 2 * f0);
-      const a = k.angle0 + (k.lieAngle - k.angle0) * e0;
-      let cy = k.com.y + (lieY - k.com.y) * e0;
-      // 2) 再一個半圈一個半圈滾：側面看起來是身體翻面（翻面時身體變薄）、往前移動
       let progress = 0; // 已經滾了幾個半圈（含小數）
       let left = ms - 160;
+      let hop = 0;
       for (let i = 0; i < k.halfRolls && left > 0; i++) {
         const d = KNOCKBACK.rollHalfMs * (1 + i * 0.25);
         const f = Math.min(1, left / d);
         progress += f;
+        if (f < 1) hop = Math.sin(Math.PI * f) * KNOCKBACK.rollHop * (1 - i / (k.halfRolls + 1));
         left -= d;
       }
-      const flip = Math.cos(Math.PI * progress);
-      // 翻到側面時身體離地稍微高一點（肩膀撐起來）
-      cy -= Math.abs(Math.sin(Math.PI * progress)) * 6;
+      const frame = Math.floor(progress) % 2 === 0 ? 3 : 4;
+      const half = (KNOCK_FRAMES[frame].h * STAND_H) / 2;
       const cx = k.com.x + k.away * progress * this.rollStep();
-      return this.poseFromCom(cx, cy, a, flip);
+      const cy = G - half - hop;
+      const a = k.away * Math.PI * progress;
+      return this.poseFromCom(cx, cy, a, 1, frame, half);
     }
     if (k.phase === 'lie' || k.stayDown || (k.done && k.stayDown)) return k.from;
-    if (k.done) return [k.endX, 0, 0, 1];
-    // 起身：手撐地 → 以腳為軸轉回直立；如果最後是翻面的就在快站好時轉回來
+    if (k.done) return [k.endX, 0, 0, 1, 0];
+    // 起身：坐起來（圖 2）→ 搖搖晃晃（圖 1）→ 站好
     const f = Math.min(1, k.t / (KNOCKBACK.getupMs / 1000));
-    const e = f * f * (3 - 2 * f);
-    const [fx, fy, fa, fflip] = k.from;
-    const push = Math.sin(Math.PI * Math.min(1, f * 2.5)) * 8 * (1 - f); // 先撐一下
-    let flip = fflip;
-    if (fflip < 0) flip = f < 0.6 ? fflip : -Math.cos(((f - 0.6) / 0.4) * Math.PI);
-    return [fx + (k.endX - fx) * e, fy * (1 - e) - push, fa * (1 - e), flip];
+    const frame = f < 0.4 ? 2 : f < 0.75 ? 1 : 0;
+    const bob = f < 0.4 ? 0 : -Math.sin(Math.PI * Math.min(1, (f - 0.4) / 0.35)) * 6;
+    return [k.endX, bob, 0, 1, frame];
+  }
+
+  /** 鋼盔要放在頭的哪裡：[x, y, 角度] */
+  private headOf(k: KnockState, p: Pose5): [number, number, number] | null {
+    const frame = p[4];
+    if (frame < 3) return null; // 站著/往後倒時用一般的頭部位置
+    const f = KNOCK_FRAMES[frame];
+    const w = f.w * STAND_H,
+      h = f.h * STAND_H;
+    // 圖是「往左被打飛」的方向，往右時鏡像
+    const hx = k.away < 0 ? f.hx : 1 - f.hx;
+    const lx = (hx - 0.5) * w,
+      ly = -(1 - f.hy) * h;
+    const c = Math.cos(p[2]),
+      s = Math.sin(p[2]);
+    return [p[0] + lx * c - ly * s, ARENA.groundY + p[1] + lx * s + ly * c, p[2] + (k.away < 0 ? f.ha : -f.ha)];
   }
 
   private recordKnock(k: KnockState, frames: PhysicsFrames): void {
     // record() 已經把 frames.count +1，這裡補上同一格
     const p = this.knockPose(k);
-    while (k.frames.length < frames.count) k.frames.push([r1(p[0]), r1(p[1]), r3(p[2]), r3(p[3])]);
+    while (k.frames.length < frames.count) k.frames.push([r1(p[0]), r1(p[1]), r3(p[2]), r3(p[3]), p[4]]);
   }
 
   // ------------------------------------------------------------ 模擬
@@ -764,7 +792,7 @@ export class PhysicsWorld {
       this.moveCharHidden(knock.seat, knock.endX);
       if (!knock.stayDown) {
         this.hideChar(knock.seat, false);
-        knock.frames[knock.frames.length - 1] = [knock.endX, 0, 0, 1];
+        knock.frames[knock.frames.length - 1] = [knock.endX, 0, 0, 1, 0];
       }
       knock.done = true;
       this.releaseWorn(knock);
