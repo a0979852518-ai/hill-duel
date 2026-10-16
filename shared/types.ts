@@ -268,6 +268,9 @@ export interface JoinResult {
 export interface ClientToServerEvents {
   'room:create': (p: { name: string }, ack: Ack<JoinResult>) => void;
   'room:join': (p: { code: string; name: string }, ack: Ack<JoinResult>) => void;
+  /** 隨機匹配：排進隊伍（配到時伺服器送 match:found） */
+  'match:join': (p: { name: string }, ack: Ack<{ queued: number }>) => void;
+  'match:cancel': () => void;
   /** 單人對戰電腦 */
   'room:createAi': (p: { name: string; difficulty: AiDifficulty }, ack: Ack<JoinResult>) => void;
   'room:resume': (p: { code: string; token: string }, ack: Ack<JoinResult>) => void;
@@ -290,4 +293,6 @@ export interface ServerToClientEvents {
   'room:state': (s: RoomSnapshot) => void;
   'game:event': (e: BattleEvent) => void;
   'room:closed': (p: { reason: string }) => void;
+  /** 隨機匹配成功：已經被放進新房間 */
+  'match:found': (r: JoinResult) => void;
 }

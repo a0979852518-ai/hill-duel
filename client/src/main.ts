@@ -71,7 +71,8 @@ function route(): void {
   }
 
   if (!inRoom) {
-    if (!document.querySelector('[data-screen=menu]')) showMenu();
+    // 隨機匹配排隊中也留在原畫面
+    if (!document.querySelector('[data-screen=menu]') && !document.querySelector('[data-screen=matching]')) showMenu();
     return;
   }
   switch (snap!.status) {

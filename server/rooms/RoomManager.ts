@@ -8,6 +8,8 @@ const CODE_LENGTH = 6;
 
 export class RoomManager {
   private rooms = new Map<string, Room>();
+  /** 隨機匹配的等待隊伍（先到先配） */
+  private queue: { socket: GameSocket; name: string }[] = [];
 
   constructor(private readonly io: IO) {}
 
@@ -23,6 +25,15 @@ export class RoomManager {
     }
   }
 
+  private dequeue(socketId: string): void {
+    this.queue = this.queue.filter((q) => q.socket.id !== socketId);
+  }
+
+  /** 目前排隊人數（健康檢查用） */
+  get queueLength(): number {
+    return this.queue.length;
+  }
+
   private roomOf(socket: GameSocket): Room | null {
     const code = socket.data.code;
     return code ? this.rooms.get(code) ?? null : null;
@@ -30,6 +41,7 @@ export class RoomManager {
 
   /** 已在其他房間的 socket 先離開，避免一個連線同時佔兩個房間 */
   private leaveCurrent(socket: GameSocket): void {
+    this.dequeue(socket.id);
     const room = this.roomOf(socket);
     if (room && socket.data.seat !== undefined) room.leave(socket.data.seat, socket);
   }
@@ -45,6 +57,30 @@ export class RoomManager {
       const { seat, token } = room.addPlayer(cleanName(p?.name), socket);
       ack?.({ ok: true, code, seat, token } satisfies { ok: true } & JoinResult);
     });
+
+    // ------------------------------------------------------------ 隨機匹配
+    socket.on('match:join', (p, ack) => {
+      this.leaveCurrent(socket);
+      this.dequeue(socket.id);
+      // 找一個還連著的對手（斷線的順便清掉）
+      this.queue = this.queue.filter((q) => q.socket.connected);
+      const other = this.queue.shift();
+      if (!other) {
+        this.queue.push({ socket, name: cleanName(p?.name) });
+        ack?.({ ok: true, queued: this.queue.length });
+        return;
+      }
+      ack?.({ ok: true, queued: 0 });
+      const code = this.generateCode();
+      const room = new Room(code, this.io, (c) => this.rooms.delete(c));
+      this.rooms.set(code, room);
+      // 先排隊的人當 1 號位（左邊）
+      const a = room.addPlayer(other.name, other.socket);
+      const b = room.addPlayer(cleanName(p?.name), socket);
+      other.socket.emit('match:found', { code, seat: a.seat, token: a.token });
+      socket.emit('match:found', { code, seat: b.seat, token: b.token });
+    });
+    socket.on('match:cancel', () => this.dequeue(socket.id));
 
     socket.on('room:createAi', (p, ack) => {
       const diffs: AiDifficulty[] = ['easy', 'normal', 'hard', 'nightmare'];
@@ -158,6 +194,7 @@ export class RoomManager {
     });
 
     socket.on('disconnect', () => {
+      this.dequeue(socket.id);
       const room = this.roomOf(socket);
       room?.handleDisconnect(socket.id);
     });

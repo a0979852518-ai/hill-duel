@@ -40,7 +40,9 @@ export function showMenu(message?: string): void {
         <label for="name">你的名字</label>
         <input id="name" maxlength="12" placeholder="輸入暱稱" value="${esc(loadName())}" />
       </div>
-      <button class="btn block" data-act="create">創建房間</button>
+      <button class="btn block" data-act="match">隨機匹配對手</button>
+      <div class="divider">或跟朋友玩</div>
+      <button class="btn secondary block" data-act="create">創建房間</button>
       <div class="divider">或</div>
       <div class="field">
         <label for="code">輸入朋友給你的房號</label>
@@ -70,6 +72,14 @@ export function showMenu(message?: string): void {
     if (!res.ok) err.textContent = errText(res.error);
     else window.dispatchEvent(new CustomEvent('hillduel:route'));
   });
+  el.querySelector('[data-act=match]')!.addEventListener('click', async () => {
+    lock(true);
+    err.textContent = '';
+    const res = await store.net.joinMatch(name.value.trim());
+    lock(false);
+    if (!res.ok) err.textContent = errText(res.error);
+    else showMatching(name.value.trim());
+  });
   el.querySelectorAll<HTMLButtonElement>('[data-ai]').forEach((b) =>
     b.addEventListener('click', async () => {
       lock(true);
@@ -96,6 +106,67 @@ export function showMenu(message?: string): void {
   el.querySelector('[data-act=join]')!.addEventListener('click', join);
   code.addEventListener('keydown', (e) => e.key === 'Enter' && join());
   code.addEventListener('input', () => (code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, '')));
+  ui().replaceChildren(el);
+}
+
+// ------------------------------------------------------------ 隨機匹配中
+
+export function showMatching(name: string): void {
+  const el = h(`
+    <div class="panel" data-screen="matching">
+      <h2>尋找對手中<span class="waiting-dots"></span></h2>
+      <p class="subtitle">已經等了 <b data-sec>0</b> 秒</p>
+      <p class="subtitle" data-hint></p>
+      <div class="ai-row" data-ai-row style="display:none">
+        <button class="btn ai-btn d-easy" data-ai="easy">弱</button>
+        <button class="btn ai-btn d-normal" data-ai="normal">中</button>
+        <button class="btn ai-btn d-hard" data-ai="hard">強</button>
+        <button class="btn ai-btn d-nightmare" data-ai="nightmare">夢魘</button>
+      </div>
+      <button class="btn secondary block" data-act="cancel" style="margin-top:14px">取消</button>
+      <div class="error" data-err></div>
+    </div>`);
+  const t0 = Date.now();
+  const sec = el.querySelector<HTMLElement>('[data-sec]')!;
+  const timer = setInterval(() => {
+    if (!el.isConnected) return clearInterval(timer);
+    const s = Math.floor((Date.now() - t0) / 1000);
+    sec.textContent = String(s);
+    // 等太久：提供改打電腦（不會自動取消排隊，還是可能配到人）
+    if (s >= 30) {
+      el.querySelector<HTMLElement>('[data-hint]')!.textContent = '目前線上的人比較少，要不要先跟電腦打？';
+      el.querySelector<HTMLElement>('[data-ai-row]')!.style.display = '';
+    }
+  }, 500);
+  // 斷線重連後伺服器已經把我們移出隊伍：重新排
+  const offStatus = store.net.onStatus(({ connected }) => {
+    if (connected && el.isConnected) void store.net.joinMatch(name);
+  });
+  const stop = () => {
+    clearInterval(timer);
+    off();
+    offStatus();
+  };
+  // 配到了：伺服器已經把我們放進房間，切到角色選擇
+  const off = store.net.onMatchFound(() => {
+    stop();
+    toast('找到對手了！');
+    window.dispatchEvent(new CustomEvent('hillduel:route'));
+  });
+  el.querySelector('[data-act=cancel]')!.addEventListener('click', () => {
+    stop();
+    store.net.cancelMatch();
+    showMenu();
+  });
+  el.querySelectorAll<HTMLButtonElement>('[data-ai]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      stop();
+      store.net.cancelMatch();
+      const res = await store.net.createAiRoom(name, b.dataset.ai as AiDifficulty);
+      if (!res.ok) el.querySelector('[data-err]')!.textContent = errText(res.error);
+      else window.dispatchEvent(new CustomEvent('hillduel:route'));
+    }),
+  );
   ui().replaceChildren(el);
 }
 

@@ -33,6 +33,7 @@ export class Network {
   private eventListeners = new Set<Listener<BattleEvent>>();
   private statusListeners = new Set<Listener<{ connected: boolean; resumeFailed?: ErrorCode }>>();
   private closedListeners = new Set<Listener<string>>();
+  private matchListeners = new Set<Listener<JoinResult>>();
 
   constructor() {
     // 開發時透過 Vite proxy、正式時同一個網址；若前後端分開部署，可用 VITE_SERVER_URL 指定
@@ -53,6 +54,11 @@ export class Network {
     this.socket.on('disconnect', () => this.statusListeners.forEach((l) => l({ connected: false })));
     this.socket.on('room:state', (s) => this.stateListeners.forEach((l) => l(s)));
     this.socket.on('game:event', (e) => this.eventListeners.forEach((l) => l(e)));
+    // 隨機匹配成功：伺服器已經把我們放進新房間
+    this.socket.on('match:found', (r) => {
+      this.setSession(r);
+      this.matchListeners.forEach((l) => l(r));
+    });
     this.socket.on('room:closed', ({ reason }) => {
       this.clearSession();
       this.closedListeners.forEach((l) => l(reason));
@@ -71,6 +77,21 @@ export class Network {
     this.statusListeners.add(l);
     return () => this.statusListeners.delete(l);
   }
+  onMatchFound(l: Listener<JoinResult>) {
+    this.matchListeners.add(l);
+    return () => this.matchListeners.delete(l);
+  }
+
+  /** 隨機匹配：排進隊伍；配到時 onMatchFound 會通知 */
+  async joinMatch(name: string) {
+    saveName(name);
+    return this.call<{ queued: number }>('match:join', { name });
+  }
+
+  cancelMatch() {
+    this.emit('match:cancel', undefined);
+  }
+
   onClosed(l: Listener<string>) {
     this.closedListeners.add(l);
     return () => this.closedListeners.delete(l);
