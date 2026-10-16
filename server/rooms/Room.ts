@@ -246,6 +246,9 @@ export class Room {
         statuses: f ? f.statuses.map((s) => ({ ...s })) : [],
         x: f?.x ?? ARENA.characterStartX[p.seat],
         ...(f && f.stuck.length ? { stuck: f.stuck.map((s) => ({ ...s })) } : {}),
+        ...(f?.hitStreak ? { streak: f.hitStreak } : {}),
+        ...(f?.huReady ? { huReady: true } : {}),
+        ...(f?.rage ? { rage: f.rage } : {}),
         ...(p.bot ? { bot: p.bot } : {}),
       };
     }) as RoomSnapshot['players'];

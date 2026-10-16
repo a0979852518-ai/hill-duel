@@ -47,6 +47,10 @@ export interface PlayerView {
   x: number;
   /** 黏在身上的東西（poopoo恩），純裝飾 */
   stuck?: StuckItem[];
+  /** 竹竿：目前連續直接命中幾次、胡了沒、憤怒加成（傷害 +） */
+  streak?: number;
+  huReady?: boolean;
+  rage?: number;
   /** 電腦玩家的難度（真人沒有） */
   bot?: AiDifficulty;
 }
@@ -168,6 +172,8 @@ export interface DefenseUpdate {
   destroyed: boolean;
   /** 'hit' 被打壞、'fell' 掉出場外、'removed' 被功能道具移除 */
   reason?: 'hit' | 'fell' | 'removed';
+  /** 被打壞後主人的憤怒加成（竹竿的手辦） */
+  rage?: { seat: Seat; total: number };
 }
 
 export type ImpactKind = 'character' | 'defense' | 'platform' | 'out';
@@ -196,6 +202,12 @@ export type BattleEvent =
       bounceFrames?: number[];
       /** 投擲物大小倍率（連恩的 poopoo恩 2.5 倍） */
       projScale?: number;
+      /** 播放到第幾格時回血（竹竿睡飽），label 顯示用 */
+      frameHeals?: { seat: Seat; amount: number; hpAfter: number; frame: number; label: string }[];
+      /** 竹竿開始睡覺的格數（顯示 Zzz） */
+      sleepFrames?: { seat: Seat; frame: number }[];
+      /** 竹竿連中 3 次，胡了 */
+      hu?: boolean;
       /** 防禦道具倒下壓到主人時改成回血（獸控），frame = 第幾格 */
       crushHeals?: { seat: Seat; amount: number; hpAfter: number; frame: number; uid: string }[];
       /** 這次黏到誰身上（poopoo恩） */

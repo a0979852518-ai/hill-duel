@@ -53,6 +53,12 @@ export interface CharacterTraits {
   ownItemScale?: Record<string, number>;
   /** 抽卡權重倍率（道具 id → 倍率），例如連恩抽到 poopoo恩 的機率 ×1.5 */
   drawWeight?: Record<string, number>;
+  /** 被打飛倒地後多躺幾毫秒才起來（竹竿：睡覺） */
+  extraLieMs?: number;
+  /** 多躺的那段時間睡飽後回幾血 */
+  sleepHeal?: number;
+  /** 投擲連續命中對手 hits 次 → 下次抽牌必出 itemId（竹竿：胡了就出麻將） */
+  streakReward?: { hits: number; itemId: string };
   /** 第一次血量歸零時鎖血，固定在 1（一場只有一次） */
   surviveOnce?: boolean;
 }
@@ -227,6 +233,33 @@ export const CHARACTERS: CharacterDef[] = [
       '抽到 poopoo恩 的機率 ×1.5',
     ],
     placeholder: { color: 0xf48fb1, accent: 0xf1d3b8 },
+  },
+  {
+    id: 'zhugan',
+    name: '竹竿',
+    maxHp: 90,
+    description: '嗜睡的雀神',
+    portrait: 'assets/characters/zhugan/portrait.png',
+    poses: {
+      idle: 'assets/characters/zhugan/idle.png',
+      throw: 'assets/characters/zhugan/throw.png',
+      hurt: 'assets/characters/zhugan/hurt.png',
+      dead: 'assets/characters/zhugan/dead.png',
+    },
+    knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/zhugan/knock${i}.png`),
+    traits: {
+      extraLieMs: 3000,
+      sleepHeal: 5,
+      streakReward: { hits: 3, itemId: 'mahjong' },
+    },
+    skills: [
+      '初始血量 90',
+      '睡眠：被打飛倒地後會多躺 3 秒才爬起來，睡飽回復 5 血',
+      '胡牌：投擲連續 3 次打中對手就「胡」，下次抽牌必出專屬武器「麻將」（傷害 69）；丟沒打中連擊就歸零',
+      '專屬卡牌「原神 1:1 手辦」：跟人一樣高的掩體，擋 1 次攻擊；每被摧毀一個，竹竿氣到傷害永久 +0.15',
+    ],
+    exclusiveItems: ['mahjong', 'genshinFigure'],
+    placeholder: { color: 0xffffff, accent: 0xf1d3b8 },
   },
 
   // ---- 以下是最早的臨時角色（沒有照片），先關閉；改成 enabled: true 就會回到選角畫面 ----

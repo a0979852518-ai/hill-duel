@@ -95,7 +95,15 @@ export class Battle {
   stopSlot(seat: Seat, turnId: number): ErrorCode | null {
     const err = this.guard(seat, turnId, ['draw']);
     if (err) return err;
-    const drawn = drawItems(GAME_CONFIG.drawCount, (i) => this.eligible(i), this.rng, (i) => this.state.traits(seat).drawWeight?.[i.id] ?? 1);
+    const weightMul = (i: ItemDef) => this.state.traits(seat).drawWeight?.[i.id] ?? 1;
+    let drawn: string[];
+    const f = this.state.fighters[seat];
+    const reward = this.state.traits(seat).streakReward;
+    if (f.huReady && reward) {
+      // 竹竿胡了：第一格必定是麻將（放第一格，冷氣卡藏的是最後一格）
+      f.huReady = false;
+      drawn = [reward.itemId, ...drawItems(GAME_CONFIG.drawCount - 1, (i) => i.id !== reward.itemId && this.eligible(i), this.rng, weightMul)];
+    } else drawn = drawItems(GAME_CONFIG.drawCount, (i) => this.eligible(i), this.rng, weightMul);
     // 冷氣卡效果：藏起部分選項（至少留一個能選）
     const hide = Math.min(this.state.hiddenDrawCount(seat), Math.max(0, drawn.length - 1));
     this.options = drawn.slice(0, drawn.length - hide);

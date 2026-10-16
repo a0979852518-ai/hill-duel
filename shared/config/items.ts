@@ -114,6 +114,8 @@ export interface DefenseDef extends ItemBase {
   maxPerPlayer?: number;
   /** 還在場上時，放置者造成的傷害倍率（獸控 ×2） */
   ownerOutgoingMultiplier?: number;
+  /** 被摧毀時，放置者的傷害永久增加這麼多（竹竿的手辦：+0.15） */
+  destroyedOwnerBonus?: number;
   /** 倒下壓到放置者時改成回血這麼多，而且道具消失（獸控） */
   crushHealsOwner?: number;
 }
@@ -277,6 +279,30 @@ export const ITEMS: ItemDef[] = [
     splashMultiplier: 0.5,
   },
   {
+    id: 'mahjong',
+    kind: 'throwable',
+    name: '麻將',
+    description: '竹竿專屬。胡牌才抽得到（連續 3 次直接命中對手）。命中傷害 69。',
+    icon: 'assets/items/mahjong.png',
+    sprite: 'assets/items/mahjong.png',
+    placeholder: { shape: 'rect', color: 0xffffff },
+    exclusiveTo: ['zhugan'],
+    // 平常抽不到：只有胡牌時直接塞進抽牌結果
+    weight: 0,
+    tags: ['light'],
+    damage: 69,
+    // 一張麻將約 30 公克，小又硬，不太受空氣影響
+    weightKg: 0.03,
+    frictionAir: 0.0012,
+    minSpeed: 420,
+    maxSpeed: 2200,
+    gravityScale: 1,
+    radius: 11,
+    spin: 0.35,
+    explosionRadius: 24,
+    splashMultiplier: 0.5,
+  },
+  {
     id: 'acCard',
     kind: 'throwable',
     name: '侯宸宇的冷氣卡',
@@ -375,6 +401,27 @@ export const ITEMS: ItemDef[] = [
     damageReduction: 1,
     durationTurns: null,
     blocks: 'all',
+  },
+
+  {
+    id: 'genshinFigure',
+    kind: 'defense',
+    name: '原神 1:1 手辦',
+    description: '竹竿專屬。跟人一樣高的手辦，可以擋下 1 次投擲攻擊；每被摧毀一個，竹竿的傷害永久 +0.15。',
+    icon: 'assets/items/genshin_figure.png',
+    sprite: 'assets/items/genshin_figure.png',
+    placeholder: { shape: 'rect', color: 0x5c8fd6 },
+    exclusiveTo: ['zhugan'],
+    size: { w: 64, h: 150 },
+    weightKg: 4,
+    density: 0.0012,
+    friction: 0.5,
+    durability: null,
+    maxHits: 1,
+    damageReduction: 1,
+    durationTurns: null,
+    blocks: 'all',
+    destroyedOwnerBonus: 0.15,
   },
 
   // ---------------- 功能型 ----------------

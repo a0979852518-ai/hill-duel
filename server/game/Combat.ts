@@ -145,6 +145,33 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     }
   }
 
+  // 竹竿：倒地多睡一下，睡飽回血
+  const frameHeals: NonNullable<ThrowEvent['frameHeals']> = [];
+  const sleepFrames: NonNullable<ThrowEvent['sleepFrames']> = [];
+  if (sim.knockSleep) {
+    const ks = sim.knockSleep;
+    sleepFrames.push({ seat: ks.seat, frame: ks.sleepFrame });
+    const amount = state.traits(ks.seat).sleepHeal ?? 0;
+    if (amount > 0 && state.fighters[ks.seat].hp > 0) {
+      const h = state.heal(ks.seat, amount);
+      if (h && h.amount > 0) frameHeals.push({ ...h, frame: ks.wakeFrame, label: '睡飽了' });
+    }
+  }
+
+  // 竹竿：投擲連續直接命中 3 次 → 胡了，下次抽牌必出麻將
+  let hu = false;
+  const reward = state.traits(seat).streakReward;
+  if (reward) {
+    const f = state.fighters[seat];
+    const hitEnemy = sim.impact.kind === 'character' && sim.impact.hitSeat === enemy;
+    f.hitStreak = hitEnemy ? (f.hitStreak ?? 0) + 1 : 0;
+    if (f.hitStreak >= reward.hits) {
+      f.hitStreak = 0;
+      f.huReady = true;
+      hu = true;
+    }
+  }
+
   // 被撞下平台的防禦道具
   defenseUpdates.push(...state.dropFallen(sim.fell));
   state.syncPoses();
@@ -165,6 +192,9 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     bounceFrames: sim.bounceFrames,
     ...(projScale !== 1 ? { projScale } : {}),
     ...(crushHeals.length ? { crushHeals } : {}),
+    ...(frameHeals.length ? { frameHeals } : {}),
+    ...(sleepFrames.length ? { sleepFrames } : {}),
+    ...(hu ? { hu } : {}),
     ...(stuck ? { stuck } : {}),
   };
 }

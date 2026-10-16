@@ -99,6 +99,9 @@ interface KnockState {
   worn: { body: any; rx: number; ry: number; a0: number }[];
   /** 每格 [腳底x, 腳底y-地面, 角度, 身體左右翻面(1 ~ -1)] */
   frames: Pose5[];
+  /** 開始躺 / 睡飽要起來時是第幾格（竹竿睡覺回血） */
+  sleepFrame?: number;
+  wakeFrame?: number;
 }
 
 /** 擊退參數（由 Combat 依打點與投擲物算出） */
@@ -185,6 +188,7 @@ export class PhysicsWorld {
    */
   clone(): PhysicsWorld {
     const w = new PhysicsWorld([this.charX[0], this.charX[1]], this.cs);
+    w.extraLie = [...this.extraLie] as [number, number];
     for (const [uid, info] of this.defs) {
       w.addDefense(uid, info.def, info.owner, info.body.position.x + info.offset.x, info.body.position.y + info.offset.y);
       const nb = w.defs.get(uid)!.body;
@@ -193,6 +197,12 @@ export class PhysicsWorld {
       Sleeping.set(nb, true);
     }
     return w;
+  }
+
+  /** 倒地後多躺幾毫秒（竹竿睡覺） */
+  private extraLie: [number, number] = [0, 0];
+  setExtraLie(seat: Seat, ms: number): void {
+    this.extraLie[seat] = ms;
   }
 
   getCharScale(seat: Seat): number {
@@ -460,13 +470,15 @@ export class PhysicsWorld {
       return;
     }
     if (k.phase === 'lie') {
+      if (k.sleepFrame === undefined) k.sleepFrame = k.frames.length;
       if (k.stayDown) {
         // 被打倒（血量歸零）就趴著
         this.moveCharHidden(k.seat, k.endX);
         k.done = true;
         return;
       }
-      if (k.t * 1000 >= KNOCKBACK.lieMs) {
+      if (k.t * 1000 >= KNOCKBACK.lieMs + this.extraLie[k.seat]) {
+        if (this.extraLie[k.seat] > 0) k.wakeFrame = k.frames.length;
         k.phase = 'getup';
         k.t = 0;
       }
@@ -659,6 +671,8 @@ export class PhysicsWorld {
     crushes: { seat: Seat; uid: string; frame: number }[];
     /** 投擲物在地上彈跳的格數（客戶端冒灰塵） */
     bounceFrames: number[];
+    /** 竹竿倒地睡覺：開始躺、睡飽起來的格數 */
+    knockSleep?: { seat: Seat; sleepFrame: number; wakeFrame: number };
   } {
     // 落地不算結束：繼續彈跳/滾動，之後打到人或防禦道具仍然算命中（傷害依彈跳次數減半）
     let groundHits = 0;
@@ -772,7 +786,8 @@ export class PhysicsWorld {
     let lastVel = { x: 0, y: 0 };
     let knock: KnockState | null = null;
     try {
-      while (step < maxFlight + afterSteps + settleSteps) {
+      const extraSteps = Math.ceil(Math.max(this.extraLie[0], this.extraLie[1]) / STEP_MS);
+      while (step < maxFlight + afterSteps + settleSteps + extraSteps) {
         if (!projGone && extraG !== 0) Body.applyForce(proj, proj.position, { x: 0, y: proj.mass * extraG });
         if (!projGone && !impact) {
           lastSpeed = Body.getSpeed(proj) * 60;
@@ -858,7 +873,9 @@ export class PhysicsWorld {
       this.removeDefense(uid);
     }
     if (impactFrame < 0) impactFrame = Math.max(0, frames.count - 1);
-    return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell, impactSpeed, crushes, bounceFrames };
+    const knockSleep =
+      knock && knock.wakeFrame !== undefined && !knock.stayDown ? { seat: knock.seat, sleepFrame: knock.sleepFrame ?? 0, wakeFrame: knock.wakeFrame } : undefined;
+    return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell, impactSpeed, crushes, bounceFrames, knockSleep };
   }
 
   /** 投擲物打中防禦道具時的額外衝量（線速度＋依打點產生的旋轉） */

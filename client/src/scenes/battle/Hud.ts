@@ -119,6 +119,9 @@ export class Hud {
             if (def?.stackable && mult) return `${name}×${+Math.pow(mult, s.stacks ?? 1).toFixed(2)}（${s.stacks ?? 1}層）`;
             return `${name}${s.remainingTurns >= PERMANENT_TURNS ? '' : '×' + s.remainingTurns}`;
           })
+          // 竹竿：連中、胡牌、憤怒
+          .concat(p.huReady ? ['胡！下次必抽麻將'] : p.streak ? [`連中 ${p.streak}/3`] : [])
+          .concat(p.rage ? [`憤怒 傷害+${p.rage.toFixed(2)}`] : [])
           .join('  '),
       );
       if (side.maxHp !== p.maxHp) {

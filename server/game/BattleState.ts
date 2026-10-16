@@ -18,6 +18,10 @@ export interface FighterState {
   stuck: StuckItem[];
   /** 鎖血技能已經用掉了 */
   survivedOnce?: boolean;
+  /** 竹竿：投擲連續直接命中次數、胡了（下次抽牌必出麻將）、手辦被毀的憤怒加成 */
+  hitStreak?: number;
+  huReady?: boolean;
+  rage?: number;
 }
 
 export interface DefenseState extends DefenseView {
@@ -38,6 +42,8 @@ export class BattleState {
   constructor(maxHp: [number, number], characterIds: [string | null, string | null] = [null, null]) {
     this.characterIds = characterIds;
     this.physics = new PhysicsWorld(undefined, [bodyScaleOf(characterIds[0]), bodyScaleOf(characterIds[1])]);
+    // 竹竿倒地後多睡一下
+    for (const s of [0, 1] as Seat[]) this.physics.setExtraLie(s, traitsOf(characterIds[s]).extraLieMs ?? 0);
     this.fighters = [
       { seat: 0, hp: maxHp[0], maxHp: maxHp[0], statuses: [], x: ARENA.characterStartX[0], stuck: [] },
       { seat: 1, hp: maxHp[1], maxHp: maxHp[1], statuses: [], x: ARENA.characterStartX[1], stuck: [] },
@@ -94,6 +100,8 @@ export class BattleState {
       // 角色基本傷害倍率（連恩對鄭霖澤改用另一個倍率）
       const vs = ta.outgoingVsChar?.[this.characterIds[seat] ?? ''];
       raw *= this.multiplier(attacker, 'outgoingMultiplier') * (vs ?? ta.outgoingMultiplier ?? 1) * this.defenseBoost(attacker);
+      // 竹竿：手辦被毀的憤怒（每個 +0.15）
+      raw *= 1 + (this.fighters[attacker].rage ?? 0);
       // 自己用某些道具特別痛（連恩的 Maya、poopoo恩）
       if (itemId) raw *= ta.ownItemMultiplier?.[itemId] ?? 1;
       // 被特定角色打（鄭霖澤打連恩 ×0.5）
@@ -242,18 +250,30 @@ export class BattleState {
     const destroyed =
       (d.durability !== null && d.durability <= 0) || (d.maxHits !== null && d.hits >= d.maxHits);
     // 被打壞：先從資料中移除（不能再擋），物理上的身體由投擲模擬讓它倒完、靜止後才移除
+    let rage: DefenseUpdate['rage'];
     if (destroyed) {
       this.defenses = this.defenses.filter((x) => x.uid !== uid);
       this.broken.set(uid, { owner: d.owner, itemId: d.itemId });
+      rage = this.rageOnDestroyed(d);
     }
-    return { uid, durability: d.durability, hits: d.hits, destroyed, reason: destroyed ? 'hit' : undefined };
+    return { uid, durability: d.durability, hits: d.hits, destroyed, reason: destroyed ? 'hit' : undefined, ...(rage ? { rage } : {}) };
   }
 
   destroyDefense(uid: string): DefenseUpdate | null {
     const d = this.getDefense(uid);
     if (!d) return null;
     this.removeDefense(uid);
-    return { uid, durability: 0, hits: d.hits, destroyed: true, reason: 'removed' };
+    const rage = this.rageOnDestroyed(d);
+    return { uid, durability: 0, hits: d.hits, destroyed: true, reason: 'removed', ...(rage ? { rage } : {}) };
+  }
+
+  /** 竹竿的手辦被毀：主人傷害永久 +0.15 */
+  private rageOnDestroyed(d: DefenseState): DefenseUpdate['rage'] {
+    const def = getItem(d.itemId);
+    if (def?.kind !== 'defense' || !def.destroyedOwnerBonus) return undefined;
+    const f = this.fighters[d.owner];
+    f.rage = Math.round(((f.rage ?? 0) + def.destroyedOwnerBonus) * 100) / 100;
+    return { seat: d.owner, total: f.rage };
   }
 
   removeDefense(uid: string): void {

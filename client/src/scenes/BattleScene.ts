@@ -488,6 +488,7 @@ export class BattleScene extends Phaser.Scene {
             this.hud.setHp(h.seat, h.hpAfter);
           }
           for (const st of e.statusApplied) this.showStatusApplied(st);
+          this.showRage(e.defenseUpdates);
           this.applyDefenseUpdates(e.defenseUpdates);
           await wait(this, 500);
         });
@@ -752,6 +753,12 @@ export class BattleScene extends Phaser.Scene {
         // 被倒下的防禦道具壓到
         const crush = e.damages.filter((d) => d.frame === k);
         if (crush.length) this.applyDamages(crush);
+        // 竹竿倒地睡覺 → 睡飽回血
+        for (const z of e.sleepFrames?.filter((x) => x.frame === k) ?? []) floatingText(this, this.xOf(z.seat), ARENA.groundY - 120, 'Zzz…', '#b3e5fc');
+        for (const h of e.frameHeals?.filter((x) => x.frame === k) ?? []) {
+          damageNumber(this, this.xOf(h.seat), h.amount, '#69f0ae', h.label, '+');
+          this.hud.setHp(h.seat, h.hpAfter);
+        }
         // 獸控倒下壓到葉柄承：回血、獸控消失
         for (const h of e.crushHeals?.filter((x) => x.frame === k) ?? []) {
           damageNumber(this, this.xOf(h.seat), h.amount, '#69f0ae', '獸控療癒', '+');
@@ -831,6 +838,12 @@ export class BattleScene extends Phaser.Scene {
       floatingText(this, ds.root.x, ds.root.y - ds.view.h / 2 - 20, '擊垮！', '#ffcc80');
       (ds.root.list[0] as Phaser.GameObjects.Image).setTint(0x9e9e9e);
       ds.label.setText('');
+    }
+    this.showRage(e.defenseUpdates);
+    // 竹竿連中 3 次：胡了！
+    if (e.hu) {
+      floatingText(this, this.xOf(e.seat), ARENA.groundY - 300, '胡！下次必抽麻將', '#ff5252');
+      sfx.play('headshot');
     }
     if (e.damages.length === 0 && e.impact.kind === 'platform') floatingText(this, e.impact.x, e.impact.y - 30, '沒打中', '#ffffff');
   }
@@ -1152,6 +1165,14 @@ export class BattleScene extends Phaser.Scene {
     skill.addEventListener('click', () => this.toggleSkills());
     app.appendChild(skill);
     this.skillBtn = skill;
+  }
+
+  /** 竹竿的手辦被毀：憤怒加成 */
+  private showRage(updates: DefenseUpdate[]): void {
+    for (const u of updates) {
+      if (!u.rage) continue;
+      floatingText(this, this.xOf(u.rage.seat), ARENA.groundY - 280, `憤怒！傷害 +0.15（共 +${u.rage.total.toFixed(2)}）`, '#ff7043');
+    }
   }
 
   /** 角色身體大小倍率（連恩 2/3） */
