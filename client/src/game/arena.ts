@@ -17,8 +17,14 @@ export const BACKGROUND_PATH = 'assets/backgrounds/campus.jpg';
  */
 const PHOTO = { worldPerTexel: (4608 / 4096) * 1.4, scrollX: 0.35, centerX: 1190, bottomY: ARENA.groundY + 10 };
 
+export const GROUND_KEY = 'bg:groundPixel';
+/** 像素風地磚（1 texel = 世界 8px，左右可無縫重複） */
+export const GROUND_PATH = 'assets/backgrounds/ground_pixel.png';
+const GROUND_TEXEL = 8;
+
 export function queueBackground(scene: Phaser.Scene): void {
   scene.load.image(BACKGROUND_KEY, BACKGROUND_PATH);
+  scene.load.image(GROUND_KEY, GROUND_PATH);
 }
 
 /** 世界外圍多畫一圈，鏡頭拉遠或晃動時不會看到黑邊 */
@@ -141,11 +147,26 @@ export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
     root.add(scene.add.image(BX0, BY0, 'arena:backdrop').setOrigin(0, 0).setScale(1 / RES).setScrollFactor(0.5, 1));
   }
 
-  // 地面（含草叢、距離木樁）
+  // 地面：像素風地磚（配合背景圖的廣場）；圖片沒載入時退回程式畫的地磚
+  const pixelGround = scene.textures.exists(GROUND_KEY);
+  if (pixelGround) {
+    scene.textures.get(GROUND_KEY).setFilter(Phaser.Textures.FilterMode.NEAREST);
+    root.add(
+      scene.add
+        .tileSprite(left, G - 4, span / GROUND_TEXEL, (BOTTOM - G + 4) / GROUND_TEXEL, GROUND_KEY)
+        .setOrigin(0, 0)
+        .setScale(GROUND_TEXEL),
+    );
+  }
+  // 地面（程式畫的地磚＋距離木樁）
   const gTop = G - 40;
   root.add(
-    baked(scene, 'arena:ground', left, gTop, span, BOTTOM - gTop, 0.5, (g, X, Y, S) => {
+    baked(scene, pixelGround ? 'arena:stakes' : 'arena:ground', left, gTop, span, BOTTOM - gTop, 0.5, (g, X, Y, S) => {
       const rr = rng(17);
+      if (pixelGround) {
+        drawStakes(g, X, Y, S);
+        return;
+      }
       // 廣場的水泥地磚（跟背景照片的廣場同色）
       g.fillStyle(0xcdc8c0).fillRect(X(left), Y(G - 4), S(span), S(BOTTOM - G + 4));
       g.fillStyle(0xbdb8b0).fillRect(X(left), Y(G + 90), S(span), S(BOTTOM - G - 90));
@@ -161,15 +182,20 @@ export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
       for (let i = 0; i < 160; i++) g.fillStyle(0x8f8a82, 0.25).fillCircle(X(left + rr() * span), Y(G + 6 + rr() * 500), S(2 + rr() * 5));
       // 地面邊緣的亮線
       g.fillStyle(0xe2ded7).fillRect(X(left), Y(G - 4), S(span), S(5));
-      // 距離標記：每 200px 一根小木樁，方便判斷距離
-      for (let x = 200; x < W; x += 200) {
-        g.fillStyle(0x2b2118).fillRect(X(x - 4), Y(G - 30), S(8), S(30));
-        g.fillStyle(0xd7b98a).fillRect(X(x - 2), Y(G - 28), S(4), S(26));
-      }
+      drawStakes(g, X, Y, S);
     }),
   );
 
   return root;
+}
+
+/** 距離標記：每 200px 一根小木樁，方便判斷距離 */
+function drawStakes(g: Phaser.GameObjects.Graphics, X: (x: number) => number, Y: (y: number) => number, S: (v: number) => number): void {
+  const G = ARENA.groundY;
+  for (let x = 200; x < ARENA.world.width; x += 200) {
+    g.fillStyle(0x2b2118).fillRect(X(x - 4), Y(G - 30), S(8), S(30));
+    g.fillStyle(0xd7b98a).fillRect(X(x - 2), Y(G - 28), S(4), S(26));
+  }
 }
 
 /** 選單背景用：整個戰場縮小置中 */
