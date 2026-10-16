@@ -76,7 +76,7 @@ export const CHARACTERS: CharacterDef[] = [
     id: 'lixinan',
     name: '李信安',
     maxHp: 100,
-    description: '戴眼鏡的冷靜投手。物理系。',
+    description: '物理系爆頭狙擊手',
     traits: { headshotMultiplier: 2, incomingByItem: { ricecooker: 0.5 } },
     skills: ['物理系：爆頭傷害 ×2（一般是 ×1.5）', '跟捲毛長期相處：被快煮鍋打到只受 0.5 倍傷害', '專屬卡牌「排球」：投擲攻擊，傷害 45'],
     exclusiveItems: ['volleyball'],
@@ -94,7 +94,7 @@ export const CHARACTERS: CharacterDef[] = [
     id: 'zhenglinze',
     name: '鄭霖澤',
     maxHp: 120,
-    description: '身手靈活的投擲好手。',
+    description: '沾屎回血的重砲坦克',
     traits: { outgoingMultiplier: 1.5, incomingByItem: { mutualBomb: 1.5 }, statusDamageMultiplier: { smoke: 3 }, stuckRegen: 1 },
     skills: [
       '初始血量 120',
@@ -116,10 +116,10 @@ export const CHARACTERS: CharacterDef[] = [
   {
     id: 'yebingcheng',
     name: '葉柄承',
-    maxHp: 65,
-    description: '架式十足的投擲新秀。',
+    maxHp: 80,
+    description: '常駐病房的獸控',
     traits: { outgoingMultiplier: 0.8 },
-    skills: ['初始血量只有 65', '造成的傷害只有 0.8 倍', '專屬卡牌「住院」：回復 50 血', '專屬卡牌「獸控」：使用後，下一個自己的回合造成的傷害 ×2'],
+    skills: ['初始血量只有 80', '造成的傷害只有 0.8 倍', '專屬卡牌「住院」：回復 50 血', '專屬卡牌「獸控」：使用後，下一個自己的回合造成的傷害 ×2'],
     exclusiveItems: ['hospital', 'beastFan'],
     portrait: 'assets/characters/yebingcheng/portrait.png',
     poses: {
