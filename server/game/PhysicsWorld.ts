@@ -1,7 +1,7 @@
 // ============================================================
 // 物理世界（Matter.js，只在伺服器上跑）
 // ------------------------------------------------------------
-// - 地面、牆是固定的；角色平常固定，被打中時會依擊退力道滑退；
+// - 地面是固定的；角色平常固定，被打中時變成會翻滾彈跳的剛體被打飛，停下後站起來；
 //   防禦道具是會掉落、堆疊、被撞歪的剛體。
 // - 每次有東西動（放置、投擲、道具被移除）就在伺服器模擬到靜止，
 //   把每一格的位置記下來（PhysicsFrames）傳給雙方播放，所以兩邊畫面一定一致。
@@ -24,7 +24,14 @@ const CAT = {
   def0: 0x0008,
   def1: 0x0010,
   proj: 0x0020,
+  /** 被打飛、翻滾中的角色 */
+  tumble: 0x0040,
+  /** 只擋翻滾角色的隱形邊界 */
+  bound: 0x0080,
 } as const;
+
+/** 翻滾身體：寬 × 高（膠囊形，圓角讓它會滾） */
+const TUMBLE = { w: 44, h: 150, r: 20 };
 
 const STEP_MS = ARENA.physicsStep * 1000;
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -37,22 +44,34 @@ interface DefenseBodyInfo {
   offset: { x: number; y: number };
 }
 
-/** 擊退中的角色（運動學：滑行＋小跳＋傾斜，最後站起來） */
+/** 擊退中的角色：Matter 剛體翻滾 → 躺一下 → 起身 */
 interface KnockState {
   seat: Seat;
-  dir: number;
-  v: number;
-  v0: number;
-  vy0: number;
+  body: any;
+  phase: 'tumble' | 'lie' | 'getup' | 'walk';
   t: number;
-  x: number;
-  yOff: number;
-  tilt: number;
-  knockdown: boolean;
-  phase: 'slide' | 'getup';
-  getupT: number;
+  restSteps: number;
+  /** 進入躺/起身階段時的姿勢 [腳底x, 腳底y-地面, 角度] */
+  from: [number, number, number];
+  /** 站起來的腳底 x */
+  endX: number;
+  /** 最後回到的腳底 x（走回原位） */
+  homeX: number;
+  /** 被打死了就不起來 */
+  stayDown: boolean;
   done: boolean;
   frames: [number, number, number][];
+}
+
+/** 擊退參數（由 Combat 依打點與投擲物算出） */
+export interface KnockRequest {
+  seat: Seat;
+  /** 初速（像素/秒） */
+  vx: number;
+  vy: number;
+  /** 角速度（弧度/秒，正 = 順時針） */
+  omega: number;
+  stayDown: boolean;
 }
 
 export interface ThrowImpact {
@@ -89,8 +108,10 @@ export class PhysicsWorld {
     };
     const statics: any[] = [
       Bodies.rectangle(W / 2, G + 100, W + 800, 200, { ...worldOpts, label: 'ground' }),
-      Bodies.rectangle(-20, G - ARENA.wallHeight / 2, 40, ARENA.wallHeight, { ...worldOpts, label: 'wall' }),
-      Bodies.rectangle(W + 20, G - ARENA.wallHeight / 2, 40, ARENA.wallHeight, { ...worldOpts, label: 'wall' }),
+      // 隱形邊界：只擋翻滾中的角色（投擲物、道具都會穿過去）
+      ...[ARENA.characterXRange[0][0] - 40, ARENA.characterXRange[1][1] + 40].map((bx) =>
+        Bodies.rectangle(bx, G - 500, 40, 1000, { isStatic: true, label: 'bound', friction: 0.1, collisionFilter: { category: CAT.bound, mask: CAT.tumble } }),
+      ),
     ];
     for (const seat of [0, 1] as Seat[]) {
       const x = this.charX[seat];
@@ -102,7 +123,7 @@ export class PhysicsWorld {
         isStatic: true,
         label: `char${seat}`,
         friction: 0.9,
-        collisionFilter: { category: seat === 0 ? CAT.char0 : CAT.char1, mask: 0xffff },
+        collisionFilter: { category: seat === 0 ? CAT.char0 : CAT.char1, mask: 0xffff & ~CAT.bound },
       });
       this.chars[seat] = body;
       statics.push(body);
@@ -114,13 +135,7 @@ export class PhysicsWorld {
     return this.charX[seat];
   }
 
-  /** 把角色移到腳底 x（固定物體直接搬移；會順便推動碰到的道具） */
-  private moveChar(seat: Seat, x: number): void {
-    const body = this.chars[seat];
-    const dx = x - this.charX[seat];
-    if (dx === 0) return;
-    Body.setPosition(body, { x: body.position.x + dx, y: body.position.y }, true);
-    this.charX[seat] = x;
+  private wakeDefenses(): void {
     // 叫醒道具，讓被角色推到或頭上頂著的東西有反應
     for (const info of this.defs.values()) Sleeping.set(info.body, false);
   }
@@ -194,22 +209,50 @@ export class PhysicsWorld {
 
   // ------------------------------------------------------------ 擊退
 
-  private startKnock(seat: Seat, speed: number, frames: PhysicsFrames): KnockState {
-    const v0 = Math.min(KNOCKBACK.maxSpeed, speed);
+  /** 把固定的角色身體藏到地底（翻滾期間由翻滾身體取代；頭上的東西會掉下來） */
+  private hideChar(seat: Seat, hidden: boolean): void {
+    const body = this.chars[seat];
+    const dy = hidden ? 4000 : -4000;
+    Body.setPosition(body, { x: body.position.x, y: body.position.y + dy }, true);
+    this.wakeDefenses();
+  }
+
+  private startKnock(req: KnockRequest, frames: PhysicsFrames): KnockState {
+    const { seat } = req;
     const x = this.charX[seat];
+    const G = ARENA.groundY;
+    this.hideChar(seat, true);
+    // 戴在頭上/靠在身上的東西跟著被打飛
+    for (const info of this.defs.values()) {
+      const p = info.body.position;
+      if (Math.abs(p.x - x) < 70 && p.y < G - 20 && p.y > G - 260) {
+        Body.setVelocity(info.body, { x: (req.vx * 0.7) / 60, y: (req.vy * 0.6 - 180) / 60 });
+        Body.setAngularVelocity(info.body, (req.omega * 0.8 + (req.vx > 0 ? 3 : -3)) / 60);
+      }
+    }
+    const body = Bodies.rectangle(x, G - TUMBLE.h / 2 - 0.5, TUMBLE.w, TUMBLE.h, {
+      chamfer: { radius: TUMBLE.r },
+      label: `tumble${seat}`,
+      friction: KNOCKBACK.friction,
+      frictionStatic: KNOCKBACK.friction * 1.4,
+      restitution: KNOCKBACK.restitution,
+      density: KNOCKBACK.density,
+      frictionAir: 0.004,
+      collisionFilter: { category: CAT.tumble, mask: CAT.world | CAT.bound | (seat === 0 ? CAT.char1 : CAT.char0) },
+    });
+    Body.setVelocity(body, { x: req.vx / 60, y: req.vy / 60 });
+    Body.setAngularVelocity(body, req.omega / 60);
+    Composite.add(this.engine.world, body);
     const k: KnockState = {
       seat,
-      dir: seat === 0 ? -1 : 1, // 往自己身後退
-      v: v0,
-      v0,
-      vy0: v0 * KNOCKBACK.lift,
+      body,
+      phase: 'tumble',
       t: 0,
-      x,
-      yOff: 0,
-      tilt: 0,
-      knockdown: v0 >= KNOCKBACK.knockdownSpeed,
-      phase: 'slide',
-      getupT: 0,
+      restSteps: 0,
+      from: [x, 0, 0],
+      endX: x,
+      homeX: KNOCKBACK.returnHome ? ARENA.characterStartX[seat] : x,
+      stayDown: req.stayDown,
       done: false,
       // 補齊命中前的影格（站著不動）
       frames: Array.from({ length: frames.count }, () => [x, 0, 0] as [number, number, number]),
@@ -219,46 +262,121 @@ export class PhysicsWorld {
     return k;
   }
 
+  /** 翻滾身體目前的 [腳底x, 腳底y-地面, 角度] */
+  private tumblePose(k: KnockState): [number, number, number] {
+    const b = k.body;
+    const a = b.angle;
+    const half = TUMBLE.h / 2;
+    return [b.position.x - Math.sin(a) * half, b.position.y + Math.cos(a) * half - ARENA.groundY, a];
+  }
+
   private stepKnock(k: KnockState, dt: number): void {
     if (k.done) return;
-    const g = ARENA.gravity;
-    const decel = PHYSICS.ground.friction * g;
-    const range = ARENA.characterXRange[k.seat];
-    if (k.phase === 'slide') {
-      k.t += dt;
-      k.v = Math.max(0, k.v - decel * dt);
-      let nx = k.x + k.dir * k.v * dt;
-      if (nx < range[0] || nx > range[1]) {
-        nx = Math.min(range[1], Math.max(range[0], nx));
-        k.v = 0;
+    k.t += dt;
+    if (k.phase === 'tumble') {
+      const b = k.body;
+      const slow = b.speed < 0.08 && Math.abs(b.angularVelocity) < 0.004;
+      k.restSteps = slow || b.isSleeping ? k.restSteps + 1 : 0;
+      if (k.restSteps > 20 || k.t * 1000 > KNOCKBACK.maxTumbleMs) {
+        k.from = this.tumblePose(k);
+        // 角度換成最接近 0 的等價角度，起身時不會多轉好幾圈
+        k.from[2] = Math.atan2(Math.sin(k.from[2]), Math.cos(k.from[2]));
+        const range = ARENA.characterXRange[k.seat];
+        k.endX = Math.min(range[1], Math.max(range[0], b.position.x));
+        Composite.remove(this.engine.world, b);
+        k.phase = 'lie';
+        k.t = 0;
       }
-      k.x = nx;
-      k.yOff = Math.max(0, k.vy0 * k.t - 0.5 * g * k.t * k.t);
-      // 被打得往後仰（頭往被推的方向），被打倒的話幾乎躺平
-      const maxTilt = k.knockdown ? 1.35 : 0.35;
-      k.tilt = k.dir * maxTilt * Math.min(1, k.t / 0.18);
-      this.moveChar(k.seat, k.x);
-      if (k.v === 0 && k.yOff === 0) {
-        k.phase = 'getup';
-        k.getupT = 0;
-      }
-    } else {
-      k.getupT += dt;
-      const dur = k.knockdown ? 0.75 : 0.3;
-      const wait = k.knockdown ? 0.35 : 0; // 躺一下再起來
-      const f = Math.min(1, Math.max(0, (k.getupT - wait) / dur));
-      const maxTilt = k.knockdown ? 1.35 : 0.35;
-      k.tilt = k.dir * maxTilt * (1 - f * f * (3 - 2 * f));
-      if (f >= 1) {
-        k.tilt = 0;
+      return;
+    }
+    if (k.stayDown) {
+      // 被打倒（血量歸零）就躺著
+      if (k.phase === 'lie') {
+        this.moveCharHidden(k.seat, k.endX);
         k.done = true;
       }
+      return;
     }
+    const lying = Math.abs(k.from[2]) > 0.6;
+    if (k.phase === 'lie') {
+      if (k.t * 1000 >= (lying ? KNOCKBACK.lieMs : 60)) {
+        k.phase = 'getup';
+        k.t = 0;
+      }
+      return;
+    }
+    if (k.phase === 'getup') {
+      if (k.t * 1000 >= KNOCKBACK.getupMs * (lying ? 1 : 0.5)) {
+        // 站好了：固定身體回到站起來的位置（頭上的東西、地上的道具又會被擋住）
+        this.moveCharHidden(k.seat, k.endX);
+        this.hideChar(k.seat, false);
+        k.phase = 'walk';
+        k.t = 0;
+      }
+      return;
+    }
+    // 走回原位：一步一步推過去，地上的道具會被推開而不是突然重疊
+    if (!KNOCKBACK.returnHome || k.t >= this.walkSeconds(k)) this.finishKnock(k);
+    else this.slideChar(k.seat, this.knockPose(k)[0]);
+  }
+
+  /** 移動（沒有藏起來的）固定角色身體，會推動碰到的道具 */
+  private slideChar(seat: Seat, x: number): void {
+    const body = this.chars[seat];
+    Body.setPosition(body, { x: body.position.x + (x - this.charX[seat]), y: body.position.y }, true);
+    this.charX[seat] = x;
+    this.wakeDefenses();
+  }
+
+  private walkSeconds(k: KnockState): number {
+    return KNOCKBACK.returnHome ? Math.abs(k.homeX - k.endX) / KNOCKBACK.walkSpeed : 0;
+  }
+
+  private finishKnock(k: KnockState): void {
+    const x = KNOCKBACK.returnHome ? k.homeX : k.endX;
+    if (k.phase === 'walk') {
+      this.slideChar(k.seat, x);
+      // 移動完把速度歸零（固定物體 setPosition 會留下速度）
+      Body.setVelocity(this.chars[k.seat], { x: 0, y: 0 });
+    } else {
+      this.moveCharHidden(k.seat, x);
+      this.hideChar(k.seat, false);
+    }
+    k.endX = x;
+    k.done = true;
+  }
+
+  /** 角色還藏在地底時更新它的 x */
+  private moveCharHidden(seat: Seat, x: number): void {
+    const body = this.chars[seat];
+    Body.setPosition(body, { x: body.position.x + (x - this.charX[seat]), y: body.position.y }, true);
+    this.charX[seat] = x;
+  }
+
+  private knockPose(k: KnockState): [number, number, number] {
+    if (k.phase === 'tumble') return this.tumblePose(k);
+    if (k.done) return k.stayDown ? k.from : [k.endX, 0, 0];
+    if (k.phase === 'lie' || k.stayDown) return k.from;
+    if (k.phase === 'walk') {
+      const dur = this.walkSeconds(k);
+      const f = dur > 0 ? Math.min(1, k.t / dur) : 1;
+      const e = f * f * (3 - 2 * f);
+      const dir = Math.sign(k.homeX - k.endX);
+      // 小跑步：上下彈一點、身體往前傾
+      const bob = -Math.abs(Math.sin(k.t * Math.PI * 4.5)) * 5 * (1 - f);
+      return [k.endX + (k.homeX - k.endX) * e, bob, dir * 0.08 * Math.sin(Math.PI * f)];
+    }
+    const lying = Math.abs(k.from[2]) > 0.6;
+    const f = Math.min(1, k.t / ((KNOCKBACK.getupMs * (lying ? 1 : 0.5)) / 1000));
+    const e = f * f * (3 - 2 * f);
+    // 起身：以腳底為軸轉回直立，腳底慢慢移到身體中心的位置；中途稍微頓一下更像撐起來
+    return [k.from[0] + (k.endX - k.from[0]) * e, k.from[1] * (1 - e), k.from[2] * (1 - e)];
   }
 
   private recordKnock(k: KnockState, frames: PhysicsFrames): void {
     // record() 已經把 frames.count +1，這裡補上同一格
-    while (k.frames.length < frames.count) k.frames.push([r1(k.x), r1(-k.yOff), r3(k.tilt)]);
+    const p = this.knockPose(k);
+    while (k.frames.length < frames.count) k.frames.push([r1(p[0]), r1(p[1]), r3(p[2])]);
   }
 
   // ------------------------------------------------------------ 模擬
@@ -354,7 +472,7 @@ export class PhysicsWorld {
     item: ThrowableDef,
     angleDeg: number,
     power: number,
-    onImpact: (impact: ThrowImpact, impactSpeed: number) => { remove: string[]; knock?: { seat: Seat; speed: number } },
+    onImpact: (impact: ThrowImpact, impactSpeed: number, impactVel: { x: number; y: number }) => { remove: string[]; knock?: KnockRequest },
   ): { frames: PhysicsFrames; impactFrame: number; impact: ThrowImpact; fell: string[]; impactSpeed: number } {
     const frames = this.newFrames();
     const last = this.snapshotPoses();
@@ -408,11 +526,15 @@ export class PhysicsWorld {
     let restSteps = 0;
     let projGone = false;
     let lastSpeed = speed;
+    let lastVel = { x: 0, y: 0 };
     let knock: KnockState | null = null;
     try {
       while (step < maxFlight + afterSteps + settleSteps) {
         if (!projGone && extraG !== 0) Body.applyForce(proj, proj.position, { x: 0, y: proj.mass * extraG });
-        if (!projGone && !impact) lastSpeed = Body.getSpeed(proj) * 60;
+        if (!projGone && !impact) {
+          lastSpeed = Body.getSpeed(proj) * 60;
+          lastVel = { x: proj.velocity.x * 60, y: proj.velocity.y * 60 };
+        }
         Engine.update(this.engine, STEP_MS);
         step++;
         if (knock) this.stepKnock(knock, STEP_MS / 1000);
@@ -425,8 +547,8 @@ export class PhysicsWorld {
           impactSpeed = lastSpeed;
           impactFrame = frames.count; // 下一格就是命中格
           impact = { ...impact, x: r1(impact.x), y: r1(impact.y) };
-          const res = onImpact(impact, impactSpeed);
-          if (res.knock && res.knock.speed > 1) knock = this.startKnock(res.knock.seat, res.knock.speed, frames);
+          const res = onImpact(impact, impactSpeed, lastVel);
+          if (res.knock) knock = this.startKnock(res.knock, frames);
           for (const uid of res.remove) {
             frames.gone[uid] = frames.count;
             this.removeDefense(uid);
@@ -461,8 +583,18 @@ export class PhysicsWorld {
     }
     if (knock && !knock.done) {
       // 安全措施：時間到還沒停就直接站好
-      this.moveChar(knock.seat, knock.x);
-      knock.done = true;
+      if (knock.phase === 'tumble') {
+        knock.endX = Math.min(ARENA.characterXRange[knock.seat][1], Math.max(ARENA.characterXRange[knock.seat][0], knock.body.position.x));
+        Composite.remove(this.engine.world, knock.body);
+      }
+      if (knock.stayDown) {
+        this.moveCharHidden(knock.seat, knock.endX);
+        knock.done = true;
+      } else {
+        this.finishKnock(knock);
+        const last = knock.frames[knock.frames.length - 1];
+        if (last) knock.frames[knock.frames.length - 1] = [knock.endX, 0, 0];
+      }
     }
     fell.push(...this.removeFallen(frames));
     if (impactFrame < 0) impactFrame = Math.max(0, frames.count - 1);

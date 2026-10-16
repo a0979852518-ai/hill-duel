@@ -37,7 +37,7 @@ export const GAME_CONFIG = {
 export const ARENA = {
   width: 1280,
   height: 720,
-  world: { width: 2600, height: 1100 },
+  world: { width: 3200, height: 1100 },
   /** 地面高度（角色腳底的 y） */
   groundY: 980,
   /** 重力（像素/秒²），各投擲物還會再乘上自己的 gravityScale。數字越大東西越「重」 */
@@ -49,15 +49,13 @@ export const ARENA = {
   /** 單次投擲最多模擬幾秒，避免無限飛行 */
   maxFlightSeconds: 8,
   /** 超出這個範圍就算飛出場外 */
-  outOfBounds: { minX: -250, maxX: 2850, maxY: 1180 },
-  /** 兩側邊界的矮牆高度（擋住滑動的人與道具，高飛的投擲物會飛出去） */
-  wallHeight: 260,
+  outOfBounds: { minX: -250, maxX: 3450, maxY: 1180 },
   /** 角色起始位置（腳底 x） */
-  characterStartX: [400, 2200],
-  /** 角色被擊退時，腳底 x 允許的範圍（不會被推到對方那半邊或場外） */
+  characterStartX: [700, 2500],
+  /** 角色被擊退後，最後站起來的位置（腳底 x）允許的範圍；場地兩端有看不見的邊界只擋翻滾中的角色 */
   characterXRange: [
-    [120, 1100],
-    [1500, 2480],
+    [90, 1500],
+    [1700, 3110],
   ],
   /** 角色受擊判定框大小（以腳底中心為基準往上；配合 150px 高的真人站姿） */
   characterHitbox: { w: 56, h: 150 },
@@ -73,18 +71,39 @@ export const ARENA = {
   placementZone: { back: 90, front: 330, top: 340 },
 } as const;
 
-/** 擊退：角色被打中後依投擲物重量與速度滑退 */
+/**
+ * 擊退：角色被直接打中時，變成一根會翻滾、彈跳的剛體（膠囊形）被打飛，停下後再站起來。
+ *  打中頭 → 往後仰倒、翻滾；打中身體中間 → 推最遠、比較不會轉；打中腳 → 腳被掃開、往前撲倒。
+ */
 export const KNOCKBACK = {
-  /** 擊退初速 = k × √(重量kg) × (命中速度 / 1500) */
-  k: 420,
-  /** 擊退初速上限（像素/秒） */
-  maxSpeed: 650,
+  /** 擊退初速 = k × √(重量kg) × (命中速度 / 1500)（像素/秒） */
+  k: 650,
+  /** 擊退初速上限 */
+  maxSpeed: 1050,
+  /** 低於這個初速只會晃一下，不會被打飛 */
+  minSpeed: 110,
   /** 爆頭額外倍率 */
-  headshotBonus: 1.25,
-  /** 往上彈的比例 */
-  lift: 0.35,
-  /** 擊退超過這個初速才會「被打倒再站起來」，否則只是踉蹌 */
-  knockdownSpeed: 450,
+  headshotBonus: 1.15,
+  /** 旋轉強度：打點離身體中心越遠轉越快（弧度/秒 每 像素/秒） */
+  spin: 0.0095,
+  /** 打點偏離中心時，線速度損失的比例（力量變成旋轉） */
+  offCenterLoss: 0.45,
+  /** 往上彈的比例（打中腳時再加 sweepLift） */
+  lift: 0.3,
+  sweepLift: 0.3,
+  /** 翻滾身體的物理材質 */
+  restitution: 0.32,
+  friction: 0.3,
+  density: 0.0012,
+  /** 最多翻滾多久（毫秒），之後強制站起來 */
+  maxTumbleMs: 3200,
+  /** 倒地後躺多久、起身花多久（毫秒） */
+  lieMs: 380,
+  getupMs: 750,
+  /** 站起來後走回原本的位置（避免越打越遠、丟不到對方）；false = 留在被打飛的地方 */
+  returnHome: true,
+  /** 走回去的速度（像素/秒） */
+  walkSpeed: 450,
 } as const;
 
 /** 鏡頭 */

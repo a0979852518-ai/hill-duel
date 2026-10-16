@@ -43,6 +43,11 @@ export class CameraDirector {
     return { x: x + dir * 430, y: centerYFor(zoom), zoom, rate };
   }
 
+  /** 這個縮放下，地面在畫面下緣附近時的鏡頭中心 y */
+  restY(zoom: number): number {
+    return centerYFor(zoom);
+  }
+
   set(shot: Shot, snap = false): void {
     this.followPt = null;
     this.target = { ...shot };

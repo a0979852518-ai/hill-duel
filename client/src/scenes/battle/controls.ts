@@ -14,12 +14,20 @@ import type { ItemDef } from '../../../../shared/config/items.js';
 import { HIDDEN_ICON } from '../../game/assets.js';
 
 function kindLabel(item: ItemDef): string {
-  if (item.kind === 'throwable') return item.weightKg ? `投擲攻擊 · ${fmtKg(item.weightKg)}` : '投擲攻擊';
+  if (item.kind === 'throwable') return '投擲攻擊';
   if (item.kind === 'defense') return '防禦';
   return item.role === 'defense' ? '功能防禦' : '功能攻擊';
 }
-function fmtKg(kg: number): string {
-  return kg >= 0.1 ? `${kg}kg` : `${Math.round(kg * 1000)}g`;
+export function fmtKg(kg: number): string {
+  return kg >= 1 ? `${kg} kg` : `${Math.round(kg * 1000)} g`;
+}
+
+/** 重量等級：投擲物越重，擊退越猛 */
+function weightClass(kg: number): { label: string; color: string } {
+  if (kg < 0.05) return { label: '超輕', color: '#7cb342' };
+  if (kg < 0.5) return { label: '輕', color: '#9e9d24' };
+  if (kg < 1) return { label: '中', color: '#ef6c00' };
+  return { label: '重', color: '#c62828' };
 }
 function kindColor(item: ItemDef): number {
   if (item.kind === 'throwable') return 0xe8743b;
@@ -158,11 +166,24 @@ export class ChoiceCards {
         .setOrigin(0.5);
       const icon = this.scene.add.image(0, -30, iconKey(id));
       fitInto(icon, 72);
+      // 重量標籤（右上角）
+      const kg = item.weightKg ?? 0.5;
+      const wc = weightClass(kg);
+      const weightTag = this.scene.add
+        .text(118, -62, `${item.kind === 'throwable' ? wc.label + ' · ' : ''}${fmtKg(kg)}`, {
+          fontFamily: FONT,
+          fontSize: '14px',
+          fontStyle: '900',
+          color: '#ffffff',
+          backgroundColor: item.kind === 'throwable' ? wc.color : '#6d5c4b',
+          padding: { x: 6, y: 2 },
+        })
+        .setOrigin(1, 0);
       const name = this.scene.add.text(0, 14, item.name, { fontFamily: FONT, fontSize: '22px', fontStyle: '900', color: '#2b2118' }).setOrigin(0.5);
       const desc = this.scene.add
         .text(0, 58, item.description, { fontFamily: FONT, fontSize: '13px', color: '#5a4a3a', align: 'center', wordWrap: { width: 230, useAdvancedWrap: true } })
         .setOrigin(0.5);
-      card.add([bg, band, kind, icon, name, desc]);
+      card.add([bg, band, kind, icon, weightTag, name, desc]);
       card.setScale(0.6).setAlpha(0);
       this.scene.tweens.add({ targets: card, scale: 1, alpha: 1, delay: i * 90, duration: 220, ease: 'Back.easeOut' });
       if (interactive) {

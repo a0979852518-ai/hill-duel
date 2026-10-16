@@ -1,4 +1,4 @@
-// 場景背景：一大片平地戰場（世界座標 ARENA.world），天空、遠山（視差）、地面與兩端的岩壁。
+// 場景背景：一大片平地戰場（世界座標 ARENA.world），天空、遠山（視差）、地面。
 // 若 client/public/assets/backgrounds/arena.png 存在就用圖片當天空背景。
 
 import * as Phaser from 'phaser';
@@ -131,16 +131,6 @@ export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
     }),
   );
 
-  // 兩端的岩壁（物理上也是牆）
-  const wall = scene.add.graphics();
-  for (const wx of [0, W]) {
-    const sign = wx === 0 ? -1 : 1;
-    wall.fillStyle(0x2b2118).fillRoundedRect(wx - 40 + sign * 20 - 4, G - ARENA.wallHeight - 4, 88, ARENA.wallHeight + 8, 14);
-    wall.fillStyle(0x8d8478).fillRoundedRect(wx - 40 + sign * 20, G - ARENA.wallHeight, 80, ARENA.wallHeight + 4, 12);
-    wall.fillStyle(0x6f675d);
-    for (let i = 0; i < 6; i++) wall.fillCircle(wx + sign * 20 + (r() - 0.5) * 50, G - 30 - r() * (ARENA.wallHeight - 50), 8 + r() * 10);
-  }
-  root.add(wall);
   return root;
 }
 

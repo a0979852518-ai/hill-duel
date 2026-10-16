@@ -32,6 +32,8 @@ interface ItemBase {
   weight?: number;
   /** 設為 false 就不會被抽到 */
   enabled?: boolean;
+  /** 真實重量（公斤），選道具時顯示；投擲物還會影響擊退的力道與樣式（預設 0.5） */
+  weightKg?: number;
 }
 
 /** 命中時附加的狀態效果 */
@@ -55,8 +57,6 @@ export interface ThrowableDef extends ItemBase {
   maxSpeed: number;
   /** 重力倍率：越大掉越快 */
   gravityScale: number;
-  /** 真實重量（公斤）：影響擊退力道，預設 0.5 */
-  weightKg?: number;
   /** 空氣阻力（0 = 沒有；輕的東西大，飛一飛就慢下來），預設 0 */
   frictionAir?: number;
   /** 飛行時的旋轉速度（弧度/格），預設 0.25 */
@@ -145,7 +145,7 @@ export const ITEMS: ItemDef[] = [
     weightKg: 0.002,
     frictionAir: 0.0075,
     minSpeed: 500,
-    maxSpeed: 2900,
+    maxSpeed: 1870,
     gravityScale: 0.8,
     radius: 10,
     spin: 0.12,
@@ -166,7 +166,7 @@ export const ITEMS: ItemDef[] = [
     weightKg: 1.3,
     frictionAir: 0.0002,
     minSpeed: 380,
-    maxSpeed: 1780,
+    maxSpeed: 1530,
     gravityScale: 1.08,
     radius: 13,
     spin: 0.3,
@@ -187,7 +187,7 @@ export const ITEMS: ItemDef[] = [
     weightKg: 0.7,
     frictionAir: 0.0008,
     minSpeed: 400,
-    maxSpeed: 1850,
+    maxSpeed: 1540,
     gravityScale: 1,
     radius: 12,
     spin: 0.25,
@@ -207,7 +207,7 @@ export const ITEMS: ItemDef[] = [
     weightKg: 0.006,
     frictionAir: 0.0065,
     minSpeed: 500,
-    maxSpeed: 2800,
+    maxSpeed: 1750,
     gravityScale: 0.75,
     radius: 10,
     spin: 0.45,
@@ -228,7 +228,7 @@ export const ITEMS: ItemDef[] = [
     weightKg: 0.55,
     frictionAir: 0.001,
     minSpeed: 400,
-    maxSpeed: 1880,
+    maxSpeed: 1560,
     gravityScale: 1,
     radius: 12,
     spin: 0.22,
@@ -247,6 +247,7 @@ export const ITEMS: ItemDef[] = [
     sprite: 'assets/items/helmet.png',
     placeholder: { shape: 'rect', color: 0x5b6b3a },
     size: { w: 84, h: 53 },
+    weightKg: 1.2,
     body: { kind: 'helmet', wall: 11, cap: 18 },
     density: 0.004,
     durability: null,
@@ -264,6 +265,7 @@ export const ITEMS: ItemDef[] = [
     sprite: 'assets/items/fridge.png',
     placeholder: { shape: 'rect', color: 0xf5f5f5 },
     size: { w: 63, h: 110 },
+    weightKg: 18,
     density: 0.003,
     friction: 0.6,
     durability: null,
@@ -281,6 +283,7 @@ export const ITEMS: ItemDef[] = [
     sprite: 'assets/items/recycle.png',
     placeholder: { shape: 'rect', color: 0xb08d57 },
     size: { w: 78, h: 100 },
+    weightKg: 3,
     density: 0.0012,
     friction: 0.9,
     durability: null,
@@ -299,6 +302,7 @@ export const ITEMS: ItemDef[] = [
     description: '同歸於盡：使用後自己和對手都扣 50 血。',
     icon: 'assets/items/teacher_photo.png',
     placeholder: { shape: 'circle', color: 0x2b2b2b },
+    weightKg: 0.005,
     handler: 'damageBoth',
     targeting: 'none',
     params: { damage: 50 },
@@ -311,6 +315,7 @@ export const ITEMS: ItemDef[] = [
     description: '對方受到精神傷害：到你下一次攻擊結束前，對方受到的傷害 ×1.5。',
     icon: 'assets/items/stockings.png',
     placeholder: { shape: 'rect', color: 0x333333 },
+    weightKg: 0.03,
     handler: 'applyStatus',
     targeting: 'none',
     params: { statusId: 'mental', turns: 2, target: 'enemy' },
@@ -323,6 +328,7 @@ export const ITEMS: ItemDef[] = [
     description: '補充蛋白質：你的下一次攻擊傷害 ×1.5。',
     icon: 'assets/items/whey.png',
     placeholder: { shape: 'rect', color: 0x222222 },
+    weightKg: 2.3,
     handler: 'applyStatus',
     targeting: 'none',
     params: { statusId: 'buff', turns: 2, target: 'self' },
@@ -335,6 +341,7 @@ export const ITEMS: ItemDef[] = [
     description: '吃飽了！回復 30 血（不會超過上限）。',
     icon: 'assets/items/porkchop.png',
     placeholder: { shape: 'rect', color: 0xd7332a },
+    weightKg: 0.6,
     handler: 'heal',
     targeting: 'none',
     params: { amount: 30 },

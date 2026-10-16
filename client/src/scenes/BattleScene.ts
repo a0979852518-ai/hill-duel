@@ -539,12 +539,23 @@ export class BattleScene extends Phaser.Scene {
             }
           } else if (ds) this.removeDefense(uid, ds, 'fall');
         }
-        // 被擊退的角色在地上滑行時揚起塵土
-        for (const [seatKey, arr] of Object.entries(frames.c ?? {})) {
-          if (!arr || k < 1 || k >= arr.length) continue;
-          const dx = arr[k][0] - arr[k - 1][0];
-          if (Math.abs(dx) > 2.5 && arr[k][1] > -4 && k % 2 === 0) dust(this, arr[k][0], ARENA.groundY, Math.sign(dx));
-          void seatKey;
+        // 被擊退的角色：在地上滑行時揚起塵土、每次落地彈起時砰一下
+        for (const arr of Object.values(frames.c ?? {})) {
+          if (!arr || k < 2 || k >= arr.length) continue;
+          const a = arr[k],
+            b = arr[k - 1],
+            c = arr[k - 2];
+          // 身體中心的高度（腳底位移 + 身體轉動造成的變化）
+          const cy = (f: [number, number, number]) => f[1] - Math.cos(f[2]) * 75;
+          const cx = (f: [number, number, number]) => f[0] + Math.sin(f[2]) * 75;
+          const vPrev = cy(b) - cy(c),
+            vNow = cy(a) - cy(b);
+          const low = cy(a) > -95;
+          if (low && Math.abs(cx(a) - cx(b)) > 2.5 && k % 2 === 0) dust(this, cx(a), ARENA.groundY, Math.sign(cx(a) - cx(b)));
+          if (low && vPrev > 2.5 && vNow <= 0.5) {
+            puff(this, cx(a), ARENA.groundY);
+            this.cameras.main.shake(90, Math.min(0.006, 0.0006 * vPrev));
+          }
         }
         opts.onFrame?.(k);
       }
@@ -598,7 +609,8 @@ export class BattleScene extends Phaser.Scene {
           fire(n - 1);
           for (const [seatKey, arr] of Object.entries(frames.c ?? {})) {
             const last = arr?.[arr.length - 1];
-            if (last) this.chars[Number(seatKey) as Seat]?.placeAt(last[0]);
+            // 站起來了才歸位；被打倒（血量歸零）就維持躺著，交給死亡動畫
+            if (last && Math.abs(last[2]) < 0.01 && Math.abs(last[1]) < 0.5) this.chars[Number(seatKey) as Seat]?.placeAt(last[0]);
           }
           resolve();
         },
@@ -622,6 +634,7 @@ export class BattleScene extends Phaser.Scene {
     const reasons: Record<string, DefenseUpdate> = {};
     for (const u of e.defenseUpdates) reasons[u.uid] = u;
     let flying = true;
+    const knocked = Object.entries(e.frames.c ?? {})[0];
     await this.playFrames(e.frames, {
       proj,
       trail,
@@ -632,6 +645,11 @@ export class BattleScene extends Phaser.Scene {
         this.speedLines.set(vx, vy, Math.hypot(vx, vy));
       },
       onFrame: (k) => {
+        // 命中後鏡頭跟著被打飛的人
+        if (!flying && knocked && k > e.impactFrame + 4) {
+          const f = knocked[1]![Math.min(k, knocked[1]!.length - 1)];
+          this.director.set({ x: f[0] + Math.sin(f[2]) * 75, y: this.director.restY(CAMERA.followZoom), zoom: CAMERA.followZoom, rate: 3.5 });
+        }
         if (k !== e.impactFrame) return;
         flying = false;
         this.speedLines.stop();

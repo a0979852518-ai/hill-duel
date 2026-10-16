@@ -74,6 +74,7 @@ export class CharacterSprite {
     this.x = x;
     this.root.x = x;
     this.body.setPosition(0, 0).setRotation(0);
+    this.shadow.setPosition(0, 2).setScale(1).setAlpha(1);
   }
 
   /** 擊退影格：腳底 x、離地位移（負 = 往上）、傾斜角 */
@@ -82,7 +83,10 @@ export class CharacterSprite {
     this.root.x = x;
     this.body.y = yOff;
     this.body.rotation = tilt;
-    this.shadow.setScale(1 + yOff / 300, 1);
+    // 影子跟著身體中心，離地越高越小越淡
+    const h = Math.max(0, -yOff);
+    this.shadow.x = Math.sin(tilt) * this.standHeight * 0.5;
+    this.shadow.setScale(Math.max(0.4, 1 - h / 400) * (1 + Math.abs(Math.sin(tilt)) * 0.8), 1).setAlpha(Math.max(0.08, 0.25 - h / 1200));
   }
 
   /** 設定常態姿勢（待機 / 瞄準中）；受傷動畫進行中會等它結束再套用 */
