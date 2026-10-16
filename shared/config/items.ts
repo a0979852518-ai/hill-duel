@@ -440,8 +440,8 @@ export const ITEMS: ItemDef[] = [
     icon: 'assets/items/hospital.png',
     placeholder: { shape: 'rect', color: 0x3f51b5 },
     exclusiveTo: ['yebingcheng'],
-    // 抽到的機率比一般道具高一點
-    weight: 1.5,
+    // 抽取權重 0.75（原本 1.5 再砍半；一般道具是 1）
+    weight: 0.75,
     weightKg: 80,
     handler: 'heal',
     targeting: 'none',
