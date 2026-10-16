@@ -60,7 +60,8 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
           headshot = true;
         }
         // 擊退：越重、越快的東西推得越遠
-        knockSpeed = Math.min(KNOCKBACK.maxSpeed, (item.knockScale ?? 1) * KNOCKBACK.k * Math.sqrt(item.weightKg ?? 0.5) * (impactSpeed / 1500) * (headshot ? KNOCKBACK.headshotBonus : 1));
+        // 擊退特別強的道具（快煮鍋）上限也跟著放大
+        knockSpeed = Math.min(KNOCKBACK.maxSpeed * Math.max(1, item.knockScale ?? 1), (item.knockScale ?? 1) * KNOCKBACK.k * Math.sqrt(item.weightKg ?? 0.5) * (impactSpeed / 1500) * (headshot ? KNOCKBACK.headshotBonus : 1));
         knockSeat = target;
       } else if (item.explosionRadius > 0 && impact.kind !== 'out') {
         const dist = distPointRect(impact.x, impact.y, characterHitbox(state.physics.getCharX(target)));
@@ -156,5 +157,6 @@ export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: 
   // 加一點固定的往後倒旋轉，打在正中間也會翻倒
   // 一律往後倒（被推的方向），打點離中心越遠轉越快；至少每秒轉 4.5 弧度，不會站著晃半天
   const omega = away * Math.max(4.5, (Math.abs(rel) * KNOCKBACK.spin + KNOCKBACK.baseSpin) * speed * spinMul);
-  return { seat, vx, vy, omega, stayDown, speed };
+  // 上限：飛太高、轉太快會飛出畫面、看不清楚
+  return { seat, vx, vy: Math.max(vy, -KNOCKBACK.maxLift), omega: Math.sign(omega) * Math.min(Math.abs(omega), KNOCKBACK.maxSpin), stayDown, speed };
 }

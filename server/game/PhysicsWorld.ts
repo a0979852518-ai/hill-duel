@@ -150,8 +150,8 @@ export class PhysicsWorld {
     const statics: any[] = [
       Bodies.rectangle(W / 2, G + 100, W + 800, 200, { ...worldOpts, label: 'ground' }),
       // 隱形邊界：只擋翻滾中的角色（投擲物、道具都會穿過去）
-      ...[ARENA.characterXRange[0][0] - 40, ARENA.characterXRange[1][1] + 40].map((bx) =>
-        Bodies.rectangle(bx, G - 500, 40, 1000, { isStatic: true, label: 'bound', friction: 0.1, collisionFilter: { category: CAT.bound, mask: CAT.tumble } }),
+      ...[ARENA.characterXRange[0][0] - 220, ARENA.characterXRange[1][1] + 220].map((bx) =>
+        Bodies.rectangle(bx, G - 1500, 40, 3000, { isStatic: true, label: 'bound', friction: 0.1, restitution: 0, collisionFilter: { category: CAT.bound, mask: CAT.tumble } }),
       ),
     ];
     for (const seat of [0, 1] as Seat[]) {
@@ -379,9 +379,11 @@ export class PhysicsWorld {
       // 快到可移動範圍的邊緣：往外的速度慢慢被吃掉（像地面變黏），不會撞到隱形牆
       const edge = k.away < 0 ? range[0] : range[1];
       const toEdge = (edge - b.position.x) * k.away;
-      if (toEdge < 260 && b.velocity.x * k.away > 0) {
-        const damp = toEdge <= 0 ? 0.8 : 1 - 0.06 * (1 - toEdge / 260);
-        Body.setVelocity(b, { x: b.velocity.x * damp, y: b.velocity.y });
+      if (toEdge < 400 && b.velocity.x * k.away > 0) {
+        // 越接近邊緣，往外的速度上限越低（距離 × 3 像素/秒），一定在邊緣前停下，不會撞牆彈回來
+        const vmax = Math.max(0, toEdge * 3) / 60;
+        const vx = Math.min(Math.abs(b.velocity.x), vmax) * k.away;
+        Body.setVelocity(b, { x: vx, y: b.velocity.y });
       }
       const slow = b.speed < 0.08 && Math.abs(b.angularVelocity) < 0.004;
       k.restSteps = slow || b.isSleeping ? k.restSteps + 1 : 0;

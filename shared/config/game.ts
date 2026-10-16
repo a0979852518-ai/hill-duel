@@ -96,6 +96,9 @@ export const KNOCKBACK = {
   /** 往上彈的比例（打中腳時再加 sweepLift） */
   lift: 0.4,
   sweepLift: 0.3,
+  /** 往上彈的速度上限（像素/秒）、旋轉速度上限（弧度/秒） */
+  maxLift: 1000,
+  maxSpin: 13,
   /** 翻滾身體的物理材質 */
   restitution: 0.3,
   friction: 0.7,
