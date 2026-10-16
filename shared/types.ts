@@ -78,8 +78,8 @@ export interface PhysicsFrames {
   p?: [number, number, number][];
   d: Record<string, [number, number, number][]>;
   gone: Record<string, number>;
-  /** 被擊退的角色：座位 → [腳底x, 腳底y, 傾斜角][]（只有會動的才會出現） */
-  c?: Partial<Record<'0' | '1', [number, number, number][]>>;
+  /** 被擊退的角色：座位 → [腳底x, 腳底y-地面, 傾斜角, 身體翻面(1~-1)][]（只有會動的才會出現） */
+  c?: Partial<Record<'0' | '1', [number, number, number, number][]>>;
 }
 
 export interface TimerView {

@@ -110,7 +110,7 @@ export class Hud {
           .map((s) => {
             const def = getStatus(s.statusId);
             const name = (def?.name ?? s.statusId).replace(/（.*）/, '');
-            if (def?.stackable && def.damagePerTurn) return `${name} -${def.damagePerTurn * (s.stacks ?? 1)}/回合`;
+            if (def?.stackable && def.damagePerTurn) return `${name} -${Math.round(def.damagePerTurn * (s.stacks ?? 1))}/回合`;
             return `${name}${s.remainingTurns >= PERMANENT_TURNS ? '' : '×' + s.remainingTurns}`;
           })
           .join('  '),

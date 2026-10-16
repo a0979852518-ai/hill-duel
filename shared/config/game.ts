@@ -37,7 +37,7 @@ export const GAME_CONFIG = {
 export const ARENA = {
   width: 1280,
   height: 720,
-  world: { width: 3200, height: 1100 },
+  world: { width: 4400, height: 1100 },
   /** 地面高度（角色腳底的 y） */
   groundY: 980,
   /** 重力（像素/秒²），各投擲物還會再乘上自己的 gravityScale。數字越大東西越「重」 */
@@ -49,13 +49,16 @@ export const ARENA = {
   /** 單次投擲最多模擬幾秒，避免無限飛行 */
   maxFlightSeconds: 8,
   /** 超出這個範圍就算飛出場外 */
-  outOfBounds: { minX: -250, maxX: 3450, maxY: 1180 },
+  outOfBounds: { minX: -250, maxX: 4650, maxY: 1180 },
   /** 角色起始位置（腳底 x） */
-  characterStartX: [700, 2500],
-  /** 角色被擊退後，最後站起來的位置（腳底 x）允許的範圍；場地兩端有看不見的邊界只擋翻滾中的角色 */
+  characterStartX: [900, 3500],
+  /**
+   * 角色被擊退後最遠能到的位置（腳底 x）。快到邊緣時翻滾會被「煞車」慢慢停下，
+   * 確保雙方距離不會超過投擲物的最遠射程（約 340 m）。
+   */
   characterXRange: [
-    [90, 1500],
-    [1700, 3110],
+    [500, 2100],
+    [2300, 3900],
   ],
   /** 角色受擊判定框大小（以腳底中心為基準往上；配合 150px 高的真人站姿） */
   characterHitbox: { w: 56, h: 150 },
@@ -77,33 +80,33 @@ export const ARENA = {
  */
 export const KNOCKBACK = {
   /** 擊退初速 = k × √(重量kg) × (命中速度 / 1500)（像素/秒） */
-  k: 650,
+  k: 450,
   /** 擊退初速上限 */
-  maxSpeed: 1050,
+  maxSpeed: 850,
   /** 低於這個初速只會晃一下，不會被打飛 */
   minSpeed: 110,
   /** 爆頭額外倍率 */
   headshotBonus: 1.15,
   /** 旋轉強度：打點離身體中心越遠轉越快（弧度/秒 每 像素/秒） */
-  spin: 0.0095,
+  spin: 0.008,
+  /** 就算打在正中間也會有一點往後倒的旋轉 */
+  baseSpin: 0.003,
   /** 打點偏離中心時，線速度損失的比例（力量變成旋轉） */
   offCenterLoss: 0.45,
   /** 往上彈的比例（打中腳時再加 sweepLift） */
   lift: 0.3,
   sweepLift: 0.3,
   /** 翻滾身體的物理材質 */
-  restitution: 0.32,
-  friction: 0.3,
+  restitution: 0.3,
+  friction: 0.7,
   density: 0.0012,
   /** 最多翻滾多久（毫秒），之後強制站起來 */
   maxTumbleMs: 3200,
   /** 倒地後躺多久、起身花多久（毫秒） */
-  lieMs: 380,
+  lieMs: 550,
+  /** 落地後在地上滾一圈半圈的時間（每半圈，毫秒） */
+  rollHalfMs: 210,
   getupMs: 750,
-  /** 站起來後走回原本的位置（避免越打越遠、丟不到對方）；false = 留在被打飛的地方 */
-  returnHome: true,
-  /** 走回去的速度（像素/秒） */
-  walkSpeed: 450,
 } as const;
 
 /** 鏡頭 */

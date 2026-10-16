@@ -546,8 +546,8 @@ export class BattleScene extends Phaser.Scene {
             b = arr[k - 1],
             c = arr[k - 2];
           // 身體中心的高度（腳底位移 + 身體轉動造成的變化）
-          const cy = (f: [number, number, number]) => f[1] - Math.cos(f[2]) * 75;
-          const cx = (f: [number, number, number]) => f[0] + Math.sin(f[2]) * 75;
+          const cy = (f: number[]) => f[1] - Math.cos(f[2]) * 75;
+          const cx = (f: number[]) => f[0] + Math.sin(f[2]) * 75;
           const vPrev = cy(b) - cy(c),
             vNow = cy(a) - cy(b);
           const low = cy(a) > -95;
@@ -561,13 +561,13 @@ export class BattleScene extends Phaser.Scene {
       }
       last = Math.max(last, upto);
     };
-    const pose = (arr: [number, number, number][], v: number) => {
+    const pose = (arr: number[][], v: number): number[] => {
       const i = Math.min(arr.length - 1, Math.floor(v));
       const j = Math.min(arr.length - 1, i + 1);
       const f = Math.min(1, v - i);
       const a = arr[i],
         b = arr[j];
-      return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f] as const;
+      return a.map((av, n) => av + (b[n] - av) * f);
     };
     return new Promise<void>((resolve) => {
       this.tweens.addCounter({
@@ -587,8 +587,8 @@ export class BattleScene extends Phaser.Scene {
           }
           for (const [seatKey, arr] of Object.entries(frames.c ?? {})) {
             if (!arr || arr.length === 0) continue;
-            const [x, y, a] = pose(arr, v);
-            this.chars[Number(seatKey) as Seat]?.setKnockPose(x, y, a);
+            const [x, y, a, flip] = pose(arr, v);
+            this.chars[Number(seatKey) as Seat]?.setKnockPose(x, y, a, flip ?? 1);
           }
           if (opts.proj && frames.p) {
             if (v < frames.p.length - 1 || (frames.p.length === 1 && v < 1)) {

@@ -74,15 +74,18 @@ export class CharacterSprite {
     this.x = x;
     this.root.x = x;
     this.body.setPosition(0, 0).setRotation(0);
+    this.body.scaleX = 1;
     this.shadow.setPosition(0, 2).setScale(1).setAlpha(1);
   }
 
   /** 擊退影格：腳底 x、離地位移（負 = 往上）、傾斜角 */
-  setKnockPose(x: number, yOff: number, tilt: number): void {
+  setKnockPose(x: number, yOff: number, tilt: number, flip = 1): void {
     this.x = x;
     this.root.x = x;
     this.body.y = yOff;
     this.body.rotation = tilt;
+    // 在地上滾的時候身體翻面（側面看會變薄再翻過來）
+    this.body.scaleX = Math.abs(flip) < 0.08 ? Math.sign(flip || 1) * 0.08 : flip;
     // 影子跟著身體中心，離地越高越小越淡
     const h = Math.max(0, -yOff);
     this.shadow.x = Math.sin(tilt) * this.standHeight * 0.5;
@@ -133,6 +136,7 @@ export class CharacterSprite {
     this.breath = null;
     this.root.setScale(1);
     this.body.setPosition(0, 0).setRotation(0);
+    this.body.scaleX = 1;
     this.img.clearTint();
     this.apply('dead');
     this.tag.setAlpha(0.5);

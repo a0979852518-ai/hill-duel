@@ -56,7 +56,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
           headshot = true;
         }
         // 擊退：越重、越快的東西推得越遠
-        knockSpeed = Math.min(KNOCKBACK.maxSpeed, KNOCKBACK.k * Math.sqrt(item.weightKg ?? 0.5) * (impactSpeed / 1500) * (headshot ? KNOCKBACK.headshotBonus : 1));
+        knockSpeed = Math.min(KNOCKBACK.maxSpeed, (item.knockScale ?? 1) * KNOCKBACK.k * Math.sqrt(item.weightKg ?? 0.5) * (impactSpeed / 1500) * (headshot ? KNOCKBACK.headshotBonus : 1));
         knockSeat = target;
       } else if (item.explosionRadius > 0 && impact.kind !== 'out') {
         const dist = distPointRect(impact.x, impact.y, characterHitbox(state.physics.getCharX(target)));
@@ -137,6 +137,7 @@ export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: 
   // 打腳 → 腳被掃起來彈比較高；打頭 → 主要是往後仰，不太會離地
   const vy = -speed * liftMul * (KNOCKBACK.lift * (1 + 0.6 * Math.min(0, rel)) + KNOCKBACK.sweepLift * Math.max(0, rel)) * (vel.y > 0 ? 0.8 : 1);
   // 力矩 = 打點相對中心的高度 × 推力；打在上面 → 頭往被推的方向轉
-  const omega = away * -rel * speed * KNOCKBACK.spin * spinMul;
-  return { seat, vx, vy, omega, stayDown };
+  // 加一點固定的往後倒旋轉，打在正中間也會翻倒
+  const omega = away * (-rel * KNOCKBACK.spin + KNOCKBACK.baseSpin) * speed * spinMul;
+  return { seat, vx, vy, omega, stayDown, speed };
 }
