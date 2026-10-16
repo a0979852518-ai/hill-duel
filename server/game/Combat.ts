@@ -116,7 +116,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
 
     // 3) 附加狀態（只附加給敵人）
     if (item.onHitStatus && hitSeats.includes(enemy) && effectsOn(enemy)) {
-      const applied = state.applyStatus(enemy, item.onHitStatus.statusId, item.onHitStatus.turns);
+      const applied = state.applyStatus(enemy, item.onHitStatus.statusId, item.onHitStatus.turns, seat);
       statusApplied = { seat: enemy, statusId: item.onHitStatus.statusId, turns: applied || item.onHitStatus.turns, ...(applied ? {} : { immune: true }) };
     }
     return { remove: destroyedNow, knock };

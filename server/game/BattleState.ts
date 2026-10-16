@@ -78,8 +78,8 @@ export class BattleState {
     for (const s of this.fighters[seat].statuses) {
       let v = getStatus(s.statusId)?.[key] ?? 1;
       // 鄭霖澤：負面效果加倍（精神傷害 ×1.2 → ×1.4）
-      const k = strength[s.statusId];
-      if (k) v = 1 + (v - 1) * k;
+      const k = (strength[s.statusId] ?? 1) * (s.strength ?? 1);
+      if (k !== 1) v = 1 + (v - 1) * k;
       m *= Math.pow(v, s.stacks ?? 1);
     }
     return m;
@@ -174,7 +174,7 @@ export class BattleState {
   }
 
   /** 附加狀態；回傳實際附加的回合數，0 = 沒附加上（角色免疫） */
-  applyStatus(seat: Seat, statusId: string, turns: number): number {
+  applyStatus(seat: Seat, statusId: string, turns: number, source?: Seat): number {
     if (!getStatus(statusId)) return 0;
     if (this.traits(seat).immuneStatuses?.includes(statusId)) return 0;
     // 鄭霖澤：有回合數的負面效果持續兩倍久
@@ -188,6 +188,9 @@ export class BattleState {
       if (def.stackable) existing.stacks = (existing.stacks ?? 1) + 1;
       existing.remainingTurns = Math.max(existing.remainingTurns, turns);
     } else f.statuses.push(def.stackable ? { statusId, remainingTurns: turns, stacks: 1 } : { statusId, remainingTurns: turns });
+    // 竹竿用絲襪：效果 ×1.5（同一個目標只會被對手附加，記在狀態上）
+    const k = source !== undefined ? this.traits(source).statusApplyStrength?.[statusId] : undefined;
+    if (k) f.statuses.find((s) => s.statusId === statusId)!.strength = k;
     return turns;
   }
 

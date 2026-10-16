@@ -53,6 +53,8 @@ export interface CharacterTraits {
   ownItemScale?: Record<string, number>;
   /** 抽卡權重倍率（道具 id → 倍率），例如連恩抽到 poopoo恩 的機率 ×1.5 */
   drawWeight?: Record<string, number>;
+  /** 自己附加給別人的狀態效果強度倍率（竹竿用絲襪 ×1.5） */
+  statusApplyStrength?: Record<string, number>;
   /** 被打飛倒地後多躺幾毫秒才起來（竹竿：睡覺） */
   extraLieMs?: number;
   /** 多躺的那段時間睡飽後回幾血 */
@@ -248,12 +250,15 @@ export const CHARACTERS: CharacterDef[] = [
     },
     knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/zhugan/knock${i}.png`),
     traits: {
+      immuneStatuses: ['mental'],
+      statusApplyStrength: { mental: 1.5 },
       extraLieMs: 3000,
       sleepHeal: 5,
       streakReward: { hits: 3, itemId: 'mahjong' },
     },
     skills: [
       '初始血量 90',
+      '自己的絲襪：免疫竹竿的絲襪；用絲襪時效果 ×1.5（每層 ×1.2 → ×1.3）',
       '睡眠：被打飛倒地後會多躺 3 秒才爬起來，睡飽回復 5 血',
       '胡牌：投擲連續 3 次打中對手就「胡」，下次抽牌必出專屬武器「麻將」（傷害 69）；丟沒打中連擊就歸零',
       '專屬卡牌「原神 1:1 手辦」：跟人一樣高的掩體，擋 1 次攻擊；每被摧毀一個，竹竿氣到傷害永久 +0.15',

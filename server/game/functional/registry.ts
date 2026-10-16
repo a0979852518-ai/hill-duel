@@ -64,7 +64,7 @@ const handlers: Record<string, FunctionalHandler> = {
       const target: Seat = item.params.target === 'self' ? seat : enemy;
       const statusId = String(item.params.statusId);
       const turns = Number(item.params.turns ?? 1);
-      const applied = state.applyStatus(target, statusId, turns);
+      const applied = state.applyStatus(target, statusId, turns, seat);
       return { damages: [], defenseUpdates: [], statusApplied: [{ seat: target, statusId, turns: applied || turns, ...(applied ? {} : { immune: true }) }] };
     },
   },

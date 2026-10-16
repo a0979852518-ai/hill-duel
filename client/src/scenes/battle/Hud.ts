@@ -114,8 +114,9 @@ export class Hud {
             if (def?.stackable && def.damagePerTurn) return `${name} -${Math.round(def.damagePerTurn * (s.stacks ?? 1))}/回合`;
             let mult = def?.incomingMultiplier ?? def?.outgoingMultiplier;
             // 鄭霖澤：負面效果加倍（絲襪每層 ×1.4）
-            const k = traitsOf(p.characterId).statusStrengthMultiplier?.[s.statusId];
-            if (mult && k) mult = 1 + (mult - 1) * k;
+            // 竹竿用的絲襪效果 ×1.5
+            const k = (traitsOf(p.characterId).statusStrengthMultiplier?.[s.statusId] ?? 1) * (s.strength ?? 1);
+            if (mult && k !== 1) mult = 1 + (mult - 1) * k;
             if (def?.stackable && mult) return `${name}×${+Math.pow(mult, s.stacks ?? 1).toFixed(2)}（${s.stacks ?? 1}層）`;
             return `${name}${s.remainingTurns >= PERMANENT_TURNS ? '' : '×' + s.remainingTurns}`;
           })

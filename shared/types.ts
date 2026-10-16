@@ -32,6 +32,8 @@ export interface StatusView {
   remainingTurns: number;
   /** 可累加的狀態（例如香菸）目前疊了幾層 */
   stacks?: number;
+  /** 效果強度倍率（竹竿用絲襪 ×1.5：每層 ×1.2 → ×1.3） */
+  strength?: number;
 }
 
 export interface PlayerView {
