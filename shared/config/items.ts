@@ -36,6 +36,8 @@ interface ItemBase {
   weightKg?: number;
   /** 角色專屬卡牌：只有這些角色抽得到（角色 id） */
   exclusiveTo?: string[];
+  /** 對手是這些角色時抽不到（角色 id） */
+  notVs?: string[];
 }
 
 /** 命中時附加的狀態效果 */
@@ -61,6 +63,8 @@ export interface ThrowableDef extends ItemBase {
   gravityScale: number;
   /** 擊退力道額外倍率（預設 1） */
   knockScale?: number;
+  /** 飛行中顯示的大小（世界像素，最長邊）；不填就依碰撞半徑 */
+  displaySize?: number;
   /** 打中人之後黏在身上（純裝飾，不影響任何數值） */
   sticky?: boolean;
   /** 空氣阻力（0 = 沒有；輕的東西大，飛一飛就慢下來），預設 0 */
@@ -300,6 +304,32 @@ export const ITEMS: ItemDef[] = [
     radius: 11,
     spin: 0.35,
     explosionRadius: 24,
+    splashMultiplier: 0.5,
+  },
+  {
+    id: 'lianenThrow',
+    kind: 'throwable',
+    name: '連恩',
+    description: '鄭霖澤專屬（對手是連恩時抽不到）。把連恩整個人丟出去，她會在空中快速旋轉，命中傷害 25。',
+    icon: 'assets/items/lianen_throw.png',
+    sprite: 'assets/items/lianen_throw.png',
+    placeholder: { shape: 'rect', color: 0x555555 },
+    exclusiveTo: ['zhenglinze'],
+    notVs: ['lianen'],
+    tags: ['heavy'],
+    damage: 25,
+    // 一個人：很重，擊退很強
+    weightKg: 40,
+    frictionAir: 0.0004,
+    minSpeed: 380,
+    maxSpeed: 2150,
+    gravityScale: 1.05,
+    radius: 26,
+    // 正常角色 2/3 大（人高 150 → 100）
+    displaySize: 100,
+    // 在空中快速旋轉
+    spin: 0.75,
+    explosionRadius: 34,
     splashMultiplier: 0.5,
   },
   {

@@ -61,6 +61,8 @@ export interface CharacterTraits {
   sleepHeal?: number;
   /** 投擲連續命中對手 hits 次 → 下次抽牌必出 itemId（竹竿：胡了就出麻將） */
   streakReward?: { hits: number; itemId: string };
+  /** 受到的單次傷害超過 at 的部分乘 factor（李信安：學分混子，超過 16 的部分減半） */
+  damageSoftCap?: { at: number; factor: number };
   /** 第一次血量歸零時鎖血，固定在 1（一場只有一次） */
   surviveOnce?: boolean;
 }
@@ -103,8 +105,8 @@ export const CHARACTERS: CharacterDef[] = [
     name: '李信安',
     maxHp: 100,
     description: '物理系爆頭狙擊手',
-    traits: { headshotMultiplier: 2, incomingByItem: { ricecooker: 0.5 } },
-    skills: ['物理系：爆頭傷害 ×2（一般是 ×1.5）', '跟捲毛長期相處：被快煮鍋打到只受 0.5 倍傷害', '專屬卡牌「排球」：投擲攻擊，傷害 45'],
+    traits: { headshotMultiplier: 2, incomingByItem: { ricecooker: 0.5 }, damageSoftCap: { at: 16, factor: 0.5 } },
+    skills: ['物理系：爆頭傷害 ×2（一般是 ×1.5）', '跟捲毛長期相處：被快煮鍋打到只受 0.5 倍傷害', '專屬卡牌「排球」：投擲攻擊，傷害 45', '學分混子：受到的單次傷害超過 16 的部分減半（例如 40 → 28）'],
     exclusiveItems: ['volleyball'],
     portrait: 'assets/characters/lixinan/portrait.png',
     poses: {
@@ -137,6 +139,7 @@ export const CHARACTERS: CharacterDef[] = [
       '弱點：大哥的香菸命中後的二手菸，每回合扣血 ×3',
       '弱點：受到的負面效果兩倍（機車鎖除外）：冷氣卡、過期果汁持續回合 ×2；絲襪每層 ×1.4',
       '身上黏著 poopoo恩 時，每回合回復 1 血',
+      '專屬卡牌「連恩」：把連恩丟出去（傷害 25，她會在空中快速旋轉）；對手是連恩時抽不到',
     ],
     portrait: 'assets/characters/zhenglinze/portrait.png',
     poses: {
@@ -146,6 +149,7 @@ export const CHARACTERS: CharacterDef[] = [
       dead: 'assets/characters/zhenglinze/dead.png',
     },
     knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/zhenglinze/knock${i}.png`),
+    exclusiveItems: ['lianenThrow'],
     placeholder: { color: 0xbdb6aa, accent: 0xf1d3b8 },
   },
   {

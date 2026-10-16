@@ -107,6 +107,9 @@ export class BattleState {
       // 被特定角色打（鄭霖澤打連恩 ×0.5）
       raw *= t.incomingFromChar?.[this.characterIds[attacker] ?? ''] ?? 1;
     }
+    // 李信安（學分混子）：單次傷害超過 16 的部分減半
+    const cap = t.damageSoftCap;
+    if (cap && raw > cap.at) raw = cap.at + (raw - cap.at) * cap.factor;
     const dmg = Math.max(0, Math.round(raw));
     if (dmg <= 0) return null;
     const f = this.fighters[seat];

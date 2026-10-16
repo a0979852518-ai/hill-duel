@@ -242,6 +242,8 @@ export class Battle {
     const seat = this.activeSeat;
     // 角色專屬卡牌
     if (item.exclusiveTo && !item.exclusiveTo.includes(this.state.characterIds[seat] ?? '')) return false;
+    // 對上某些角色時抽不到（鄭霖澤的「連恩」遇到連恩本人）
+    if (item.notVs?.includes(this.state.characterIds[seat === 0 ? 1 : 0] ?? '')) return false;
     if (item.kind === 'defense') return canPlaceMore(this.state, seat, item);
     if (item.kind === 'functional') {
       const h = getHandler(item.handler);

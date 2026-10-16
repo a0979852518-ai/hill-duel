@@ -721,7 +721,7 @@ export class BattleScene extends Phaser.Scene {
     const kg = item?.kind === 'throwable' ? item.weightKg ?? 0.5 : 0.5;
     sfx.play(kg >= 0.5 ? 'throwHeavy' : 'throwLight', { vol: 0.5 + e.power * 0.6, rate: kg >= 1 ? 0.85 : 1 });
     // 連恩的 poopoo恩 2.5 倍大
-    fitInto(proj, (item?.kind === 'throwable' ? Math.max(32, item.radius * 3.4) : 32) * (e.projScale ?? 1));
+    fitInto(proj, (item?.kind === 'throwable' ? item.displaySize ?? Math.max(32, item.radius * 3.4) : 32) * (e.projScale ?? 1));
     if (!this.textures.exists('fx:dot')) {
       const g = this.make.graphics({}, false);
       g.fillStyle(0xffffff, 1).fillCircle(3, 3, 2.4);
