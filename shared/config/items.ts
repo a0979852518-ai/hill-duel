@@ -112,6 +112,8 @@ export interface DefenseDef extends ItemBase {
   blocks: 'all' | string[];
   /** 同一玩家場上最多同時存在幾個（不填 = 不限） */
   maxPerPlayer?: number;
+  /** 還在場上時，放置者造成的傷害倍率（獸控 ×2） */
+  ownerOutgoingMultiplier?: number;
 }
 
 export interface FunctionalDef extends ItemBase {
@@ -443,19 +445,27 @@ export const ITEMS: ItemDef[] = [
   },
   {
     id: 'beastFan',
-    kind: 'functional',
-    role: 'attack',
+    kind: 'defense',
     name: '獸控',
-    description: '葉柄承專屬。使用後，下一個自己的回合造成的傷害 ×2。',
+    description: '葉柄承專屬。放出來當掩體，可以擋下 2 次投擲攻擊；它還在場上時，你造成的傷害 ×2。',
     icon: 'assets/items/beastfan.png',
+    sprite: 'assets/items/beastfan.png',
     placeholder: { shape: 'rect', color: 0x2e7d32 },
     exclusiveTo: ['yebingcheng'],
+    size: { w: 70, h: 100 },
     weightKg: 0.3,
-    handler: 'applyStatus',
-    targeting: 'none',
-    // 2 回合、回合結束時遞減：這回合結束剩 1 → 下一個自己的回合有效 → 結束後消失
-    params: { statusId: 'beast', turns: 2, target: 'self' },
+    density: 0.0015,
+    friction: 0.5,
+    durability: null,
+    maxHits: 2,
+    damageReduction: 1,
+    durationTurns: null,
+    blocks: 'all',
+    // 同時只能有一隻（兩隻會變 ×4）
+    maxPerPlayer: 1,
+    ownerOutgoingMultiplier: 2,
   },
+
 
   // ================= 以下是最早的臨時道具（已停用，改 enabled: true 可加回抽取池） =================
 

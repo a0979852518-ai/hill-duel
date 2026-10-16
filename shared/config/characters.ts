@@ -95,10 +95,10 @@ export const CHARACTERS: CharacterDef[] = [
     name: '鄭霖澤',
     maxHp: 120,
     description: '沾屎回血的重砲坦克',
-    traits: { outgoingMultiplier: 1.5, incomingByItem: { mutualBomb: 1.5 }, statusDamageMultiplier: { smoke: 3 }, stuckRegen: 1 },
+    traits: { outgoingMultiplier: 1.2, incomingByItem: { mutualBomb: 1.5 }, statusDamageMultiplier: { smoke: 3 }, stuckRegen: 1 },
     skills: [
       '初始血量 120',
-      '造成的傷害 ×1.5',
+      '造成的傷害 ×1.2',
       '弱點：老師的奶照對他的傷害 ×1.5',
       '弱點：大哥的香菸命中後的二手菸，每回合扣血 ×3',
       '身上黏著 poopoo恩 時，每回合回復 1 血',
@@ -116,10 +116,15 @@ export const CHARACTERS: CharacterDef[] = [
   {
     id: 'yebingcheng',
     name: '葉柄承',
-    maxHp: 80,
+    maxHp: 70,
     description: '常駐病房的獸控',
     traits: { outgoingMultiplier: 0.8 },
-    skills: ['初始血量只有 80', '造成的傷害只有 0.8 倍', '專屬卡牌「住院」：回復 50 血', '專屬卡牌「獸控」：使用後，下一個自己的回合造成的傷害 ×2'],
+    skills: [
+      '初始血量只有 70',
+      '造成的傷害只有 0.8 倍',
+      '專屬卡牌「住院」：回復 50 血',
+      '專屬卡牌「獸控」：特殊防禦道具，放出來當掩體擋 2 次攻擊；還在場上時造成的傷害 ×2（跟 0.8 倍相乘 = 1.6 倍）',
+    ],
     exclusiveItems: ['hospital', 'beastFan'],
     portrait: 'assets/characters/yebingcheng/portrait.png',
     poses: {

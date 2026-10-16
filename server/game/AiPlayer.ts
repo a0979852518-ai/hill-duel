@@ -147,6 +147,8 @@ export class AiPlayer {
     }
     if (item.kind === 'defense') {
       const mine = st.defenses.filter((d) => d.owner === this.seat).length;
+      // 獸控：擋 2 次＋之後傷害 ×2，很划算
+      if (item.ownerOutgoingMultiplier) return 4 + 15 * hitRate;
       return 4 - mine * 2;
     }
     // 功能道具
@@ -167,7 +169,6 @@ export class AiPlayer {
         // 對方免疫（捲毛不吃絲襪）→ 用了等於白費
         if (st.traits(target).immuneStatuses?.includes(statusId)) return -10;
         // 獸控：下回合傷害 ×2，約等於多打一發的期望傷害
-        if (statusId === 'beast') return 12 * hitRate;
         // 永久 ×1.2：越早用越划算
         return 5 + (foe.hp / foe.maxHp) * 4;
       }

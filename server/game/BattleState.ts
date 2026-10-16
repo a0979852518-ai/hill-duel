@@ -3,7 +3,7 @@
 
 import { ARENA } from '../../shared/config/game.js';
 import { traitsOf, type CharacterTraits } from '../../shared/config/characters.js';
-import { getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
+import { getItem, getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
 import type { DamageEntry, DefenseUpdate, DefenseView, HealEntry, Seat, StatusView, StuckItem } from '../../shared/types.js';
 import { PhysicsWorld } from './PhysicsWorld.js';
 
@@ -46,6 +46,17 @@ export class BattleState {
     return `${prefix}${this.uidCounter}`;
   }
 
+  /** 場上自己的防禦道具帶來的增傷（獸控還在 → ×2） */
+  defenseBoost(seat: Seat): number {
+    let m = 1;
+    for (const d of this.defenses) {
+      if (d.owner !== seat) continue;
+      const def = getItem(d.itemId);
+      if (def?.kind === 'defense' && def.ownerOutgoingMultiplier) m *= def.ownerOutgoingMultiplier;
+    }
+    return m;
+  }
+
   traits(seat: Seat): CharacterTraits {
     return traitsOf(this.characterIds[seat]);
   }
@@ -68,7 +79,7 @@ export class BattleState {
     // 角色弱點/抗性：被特定道具打、特定狀態的持續傷害
     if (itemId) raw *= t.incomingByItem?.[itemId] ?? 1;
     if (statusId) raw *= t.statusDamageMultiplier?.[statusId] ?? 1;
-    if (attacker !== undefined) raw *= this.multiplier(attacker, 'outgoingMultiplier') * (this.traits(attacker).outgoingMultiplier ?? 1);
+    if (attacker !== undefined) raw *= this.multiplier(attacker, 'outgoingMultiplier') * (this.traits(attacker).outgoingMultiplier ?? 1) * this.defenseBoost(attacker);
     const dmg = Math.max(0, Math.round(raw));
     if (dmg <= 0) return null;
     const f = this.fighters[seat];

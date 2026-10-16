@@ -454,6 +454,12 @@ export class BattleScene extends Phaser.Scene {
             },
           });
           this.applyDefenseUpdates(e.fell);
+          // 獸控：還在場上時攻擊力 ×2
+          const placedDef = getItem(e.defense.itemId);
+          if (placedDef?.kind === 'defense' && placedDef.ownerOutgoingMultiplier) {
+            floatingText(this, this.xOf(e.seat), ARENA.groundY - 230, `攻擊力 ×${placedDef.ownerOutgoingMultiplier}！`, '#69f0ae');
+            sfx.play('status');
+          }
           await wait(this, 200);
         });
         break;
