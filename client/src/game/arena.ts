@@ -1,11 +1,21 @@
-// 場景背景：一大片平地戰場（世界座標 ARENA.world），天空、遠山（視差）、地面。
-// 若 client/public/assets/backgrounds/arena.png 存在就用圖片當天空背景。
+// 場景背景：一大片平地戰場（世界座標 ARENA.world），遠景（視差）＋地面。
+// 遠景用 client/public/assets/backgrounds/campus.jpg（蕙蘭樓照片：中間原圖、兩側鏡像延伸、上方補天空），
+// 載入失敗時退回程式畫的天空與遠山。
 
 import * as Phaser from 'phaser';
 import { ARENA } from '../../../shared/config/game.js';
 
 export const BACKGROUND_KEY = 'bg:arena';
-export const BACKGROUND_PATH = 'assets/backgrounds/arena.png';
+export const BACKGROUND_PATH = 'assets/backgrounds/campus.jpg';
+
+/**
+ * 遠景照片怎麼擺：
+ *  照片 1 像素 = 世界 1.4 像素（大樓在人物後面很遠，所以比真實比例小一點；人 150px）
+ *  貼圖寬 4096 = 照片 4608 像素（3 份照片寬）→ 每貼圖像素 = 4608/4096 照片像素
+ *  視差 0.35：大樓比人物後面很遠，鏡頭移動時移得比較慢
+ *  照片底邊（裁在大樓前廣場）放在地面線下面，被前景地面蓋住（不能露出縫）
+ */
+const PHOTO = { worldPerTexel: (4608 / 4096) * 1.4, scrollX: 0.35, centerX: 1190, bottomY: ARENA.groundY + 10 };
 
 export function queueBackground(scene: Phaser.Scene): void {
   scene.load.image(BACKGROUND_KEY, BACKGROUND_PATH);
@@ -67,8 +77,11 @@ export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
   const bw = Math.ceil((BX1 - BX0) * RES),
     bh = Math.ceil((BY1 - BY0) * RES);
   if (scene.textures.exists(BACKGROUND_KEY)) {
-    const img = scene.add.image(BX0, BY1, BACKGROUND_KEY).setOrigin(0, 1).setScrollFactor(0.5, 1);
-    img.setDisplaySize(BX1 - BX0, BY1 - BY0);
+    const img = scene.add
+      .image(PHOTO.centerX, PHOTO.bottomY, BACKGROUND_KEY)
+      .setOrigin(0.5, 1)
+      .setScale(PHOTO.worldPerTexel)
+      .setScrollFactor(PHOTO.scrollX, 1);
     root.add(img);
   } else {
     if (!scene.textures.exists('arena:backdrop')) {
@@ -133,16 +146,21 @@ export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
   root.add(
     baked(scene, 'arena:ground', left, gTop, span, BOTTOM - gTop, 0.5, (g, X, Y, S) => {
       const rr = rng(17);
-      g.fillStyle(0x7a5233).fillRect(X(left), Y(G), S(span), S(BOTTOM - G));
-      g.fillStyle(0x6a4529).fillRect(X(left), Y(G + 70), S(span), S(BOTTOM - G - 70));
-      for (let i = 0; i < 90; i++) g.fillStyle(0x5d3a1f, 0.6).fillCircle(X(left + rr() * span), Y(G + 30 + rr() * 400), S(4 + rr() * 9));
-      g.fillStyle(0x6fbf4a).fillRect(X(left), Y(G - 4), S(span), S(22));
-      g.fillStyle(0x5aa53a).fillRect(X(left), Y(G + 14), S(span), S(6));
-      g.fillStyle(0x5aa53a);
-      for (let x = left; x < right; x += 18 + rr() * 30) {
-        const h = 6 + rr() * 12;
-        g.fillTriangle(X(x), Y(G - 2), X(x + 5), Y(G - 2 - h), X(x + 10), Y(G - 2));
+      // 廣場的水泥地磚（跟背景照片的廣場同色）
+      g.fillStyle(0xcdc8c0).fillRect(X(left), Y(G - 4), S(span), S(BOTTOM - G + 4));
+      g.fillStyle(0xbdb8b0).fillRect(X(left), Y(G + 90), S(span), S(BOTTOM - G - 90));
+      g.fillStyle(0xaaa59d).fillRect(X(left), Y(G + 260), S(span), S(BOTTOM - G - 260));
+      // 地磚縫：橫線＋錯開的直線
+      g.fillStyle(0x9e9990, 0.8);
+      for (const yy of [G + 90, G + 260]) g.fillRect(X(left), Y(yy), S(span), S(3));
+      for (let x = left; x < right; x += 240) {
+        g.fillRect(X(x), Y(G - 4), S(3), S(94));
+        g.fillRect(X(x + 120), Y(G + 90), S(3), S(170));
       }
+      // 地磚上的斑點
+      for (let i = 0; i < 160; i++) g.fillStyle(0x8f8a82, 0.25).fillCircle(X(left + rr() * span), Y(G + 6 + rr() * 500), S(2 + rr() * 5));
+      // 地面邊緣的亮線
+      g.fillStyle(0xe2ded7).fillRect(X(left), Y(G - 4), S(span), S(5));
       // 距離標記：每 200px 一根小木樁，方便判斷距離
       for (let x = 200; x < W; x += 200) {
         g.fillStyle(0x2b2118).fillRect(X(x - 4), Y(G - 30), S(8), S(30));
