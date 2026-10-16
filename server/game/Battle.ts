@@ -95,7 +95,7 @@ export class Battle {
   stopSlot(seat: Seat, turnId: number): ErrorCode | null {
     const err = this.guard(seat, turnId, ['draw']);
     if (err) return err;
-    const drawn = drawItems(GAME_CONFIG.drawCount, (i) => this.eligible(i), this.rng);
+    const drawn = drawItems(GAME_CONFIG.drawCount, (i) => this.eligible(i), this.rng, (i) => this.state.traits(seat).drawWeight?.[i.id] ?? 1);
     // 冷氣卡效果：藏起部分選項（至少留一個能選）
     const hide = Math.min(this.state.hiddenDrawCount(seat), Math.max(0, drawn.length - 1));
     this.options = drawn.slice(0, drawn.length - hide);

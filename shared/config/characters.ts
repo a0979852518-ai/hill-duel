@@ -51,6 +51,8 @@ export interface CharacterTraits {
   statusStrengthMultiplier?: Record<string, number>;
   /** 自己丟出去的這些道具變大幾倍（碰撞範圍一起變大） */
   ownItemScale?: Record<string, number>;
+  /** 抽卡權重倍率（道具 id → 倍率），例如連恩抽到 poopoo恩 的機率 ×1.5 */
+  drawWeight?: Record<string, number>;
   /** 第一次血量歸零時鎖血，固定在 1（一場只有一次） */
   surviveOnce?: boolean;
 }
@@ -213,6 +215,7 @@ export const CHARACTERS: CharacterDef[] = [
       ownItemMultiplier: { maya2026: 4, poopoo: 3 },
       incomingFromChar: { zhenglinze: 0.5 },
       ownItemScale: { poopoo: 2.5 },
+      drawWeight: { poopoo: 1.5 },
     },
     skills: [
       '人物矮小：身高只有一般角色的 2/3（比較難打中）',
@@ -221,6 +224,7 @@ export const CHARACTERS: CharacterDef[] = [
       '鄭霖澤打中她的傷害只有 0.5 倍',
       '自己丟的 Maya 2026 傷害 ×4',
       '自己丟的 poopoo恩 傷害 ×3，而且是一般的 2.5 倍大',
+      '抽到 poopoo恩 的機率 ×1.5',
     ],
     placeholder: { color: 0xf48fb1, accent: 0xf1d3b8 },
   },
