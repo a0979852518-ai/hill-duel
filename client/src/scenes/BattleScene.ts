@@ -94,7 +94,7 @@ export class BattleScene extends Phaser.Scene {
     this.ready = false;
     this.introPlayed = false;
     this.hitstop = 1;
-    drawArena(this);
+    drawArena(this, store.snapshot?.mapId);
     this.director = new CameraDirector(this.cameras.main);
     this.director.update(0);
     // 螢幕層（HUD 等）是另一個疊在上面的 Scene，不受戰場鏡頭縮放影響

@@ -131,6 +131,8 @@ export interface RoomSnapshot {
   turn: TurnView | null;
   winnerSeat: Seat | null;
   endReason: 'hp' | 'forfeit' | null;
+  /** 這場用哪張地圖（shared/config/maps.ts） */
+  mapId?: string;
 }
 
 export interface DamageEntry {

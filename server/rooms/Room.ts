@@ -16,6 +16,7 @@ import type {
 } from '../../shared/types.js';
 import { AiPlayer, AI_PROFILES } from '../game/AiPlayer.js';
 import { Battle } from '../game/Battle.js';
+import { randomMapId } from '../../shared/config/maps.js';
 import { CHARACTERS } from '../../shared/config/characters.js';
 
 export type IO = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -46,6 +47,8 @@ export class Room {
   endReason: 'hp' | 'forfeit' | null = null;
   private cleanupTimer: NodeJS.Timeout | null = null;
   private ai: AiPlayer | null = null;
+  /** 這場的地圖（開打時隨機挑） */
+  mapId: string | null = null;
 
   constructor(
     readonly code: string,
@@ -196,6 +199,8 @@ export class Room {
     const hpA = getCharacter(a.characterId!)!.maxHp;
     const hpB = getCharacter(b.characterId!)!.maxHp;
     this.status = 'battle';
+    // 測試用：環境變數 HILLDUEL_MAP=hallway 可以固定地圖
+    this.mapId = process.env.HILLDUEL_MAP || randomMapId();
     this.battle = new Battle(
       [hpA, hpB],
       {
@@ -252,6 +257,7 @@ export class Room {
       turn: this.battle && this.status === 'battle' ? this.battle.turnView() : null,
       winnerSeat: this.winnerSeat,
       endReason: this.endReason,
+      ...(this.mapId ? { mapId: this.mapId } : {}),
     };
   }
 

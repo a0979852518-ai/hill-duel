@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser';
 import { ensurePlaceholders, queueAssets } from '../game/assets.js';
 import { drawArena, fitArenaCamera, queueBackground } from '../game/arena.js';
+import { randomMapId } from '../../../shared/config/maps.js';
 import { FONT } from './battle/effects.js';
 
 /** 載入所有素材（缺的自動補 placeholder），完成後進入背景場景 */
@@ -27,7 +28,8 @@ export class BackdropScene extends Phaser.Scene {
     super('Backdrop');
   }
   create(): void {
-    drawArena(this);
+    // 選單背景：每次隨機一張地圖
+    drawArena(this, randomMapId());
     fitArenaCamera(this);
     this.add.rectangle(640, 360, 1280, 720, 0x1d2733, 0.35).setScrollFactor(0).setScale(1 / this.cameras.main.zoom);
   }

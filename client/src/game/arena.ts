@@ -1,32 +1,24 @@
 // 場景背景：一大片平地戰場（世界座標 ARENA.world），遠景（視差）＋地面。
-// 遠景用 client/public/assets/backgrounds/campus.jpg（蕙蘭樓照片：中間原圖、兩側鏡像延伸、上方補天空），
-// 載入失敗時退回程式畫的天空與遠山。
+// 遠景與地板依地圖設定（shared/config/maps.ts），載入失敗時退回程式畫的天空、遠山與地磚。
 
 import * as Phaser from 'phaser';
 import { ARENA } from '../../../shared/config/game.js';
 
-export const BACKGROUND_KEY = 'bg:arena';
-export const BACKGROUND_PATH = 'assets/backgrounds/campus.jpg';
+import { getMap, MAPS, type MapDef } from '../../../shared/config/maps.js';
 
-/**
- * 遠景照片怎麼擺：
- *  照片 1 像素 = 世界 1.4 像素（大樓在人物後面很遠，所以比真實比例小一點；人 150px）
- *  貼圖寬 4096 = 照片 4608 像素（3 份照片寬）→ 每貼圖像素 = 4608/4096 照片像素
- *  視差 0.35：大樓比人物後面很遠，鏡頭移動時移得比較慢
- *  照片底邊（裁在大樓前廣場）放在地面線下面，被前景地面蓋住（不能露出縫）
- */
-const PHOTO = { worldPerTexel: (4608 / 4096) * 1.4, scrollX: 0.35, centerX: 1190, bottomY: ARENA.groundY + 10 };
-
-export const GROUND_KEY = 'bg:groundPixel';
-/** 像素風地磚（1 texel = 世界 8px，左右可無縫重複） */
-export const GROUND_PATH = 'assets/backgrounds/ground_pixel.png';
-const GROUND_TEXEL = 8;
-/** 地面往世界兩側延伸多遠 */
+const bgKey = (m: MapDef) => `bg:${m.id}`;
+const groundKey = (m: MapDef) => `ground:${m.id}`;
+/** 地面往世界兩側延伸多遠（沒有地圖邊界） */
 const GROUND_EXTRA = 9000;
+/** 遠景往世界兩側鋪多遠 */
+const BG_EXTRA = 9000;
 
+/** 所有地圖的遠景與地板都先載入（每張約 0.5～1MB），開打時隨機用其中一張 */
 export function queueBackground(scene: Phaser.Scene): void {
-  scene.load.image(BACKGROUND_KEY, BACKGROUND_PATH);
-  scene.load.image(GROUND_KEY, GROUND_PATH);
+  for (const m of MAPS) {
+    scene.load.image(bgKey(m), m.bg);
+    scene.load.image(groundKey(m), m.ground);
+  }
 }
 
 /** 世界外圍多畫一圈，鏡頭拉遠或晃動時不會看到黑邊 */
@@ -66,7 +58,9 @@ function baked(
   return scene.add.image(x0, y0, key).setOrigin(0, 0).setScale(1 / res);
 }
 
-export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
+export function drawArena(scene: Phaser.Scene, mapId?: string | null): Phaser.GameObjects.Container {
+  const map = getMap(mapId);
+  scene.cameras.main.setBackgroundColor(map.bgColor);
   const root = scene.add.container(0, 0).setDepth(-10);
   const W = ARENA.world.width;
   const G = ARENA.groundY;
@@ -84,13 +78,20 @@ export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
   const RES = 0.4;
   const bw = Math.ceil((BX1 - BX0) * RES),
     bh = Math.ceil((BY1 - BY0) * RES);
-  if (scene.textures.exists(BACKGROUND_KEY)) {
-    const img = scene.add
-      .image(PHOTO.centerX, PHOTO.bottomY, BACKGROUND_KEY)
-      .setOrigin(0.5, 1)
-      .setScale(PHOTO.worldPerTexel)
-      .setScrollFactor(PHOTO.scrollX, 1);
-    root.add(img);
+  const BG = bgKey(map);
+  if (scene.textures.exists(BG)) {
+    // 遠景：「原圖＋鏡像」一組左右重複貼，原圖中心對齊 map.centerX
+    const tex = scene.textures.get(BG).getSourceImage() as { width: number; height: number };
+    const k = map.worldPerTexel;
+    const x0 = -BG_EXTRA;
+    const ts = scene.add
+      .tileSprite(x0, G + map.bottomOffset, (W + BG_EXTRA * 2) / k, tex.height, BG)
+      .setOrigin(0, 1)
+      .setScale(k)
+      .setScrollFactor(map.scrollX, 1);
+    const p = (map.centerX - x0) / k;
+    ts.tilePositionX = (((map.photoCenter - p) % tex.width) + tex.width) % tex.width;
+    root.add(ts);
   } else {
     if (!scene.textures.exists('arena:backdrop')) {
       const tex = scene.textures.createCanvas('arena:backdrop', bw, bh)!;
@@ -150,15 +151,17 @@ export function drawArena(scene: Phaser.Scene): Phaser.GameObjects.Container {
   }
 
   // 地面：像素風地磚（配合背景圖的廣場）；圖片沒載入時退回程式畫的地磚
-  const pixelGround = scene.textures.exists(GROUND_KEY);
+  const GK = groundKey(map);
+  const pixelGround = scene.textures.exists(GK);
   if (pixelGround) {
-    scene.textures.get(GROUND_KEY).setFilter(Phaser.Textures.FilterMode.NEAREST);
+    scene.textures.get(GK).setFilter(Phaser.Textures.FilterMode.NEAREST);
+    const T = map.groundTexel;
     root.add(
       scene.add
         // 沒有地圖邊界：地面往兩邊鋪很遠（tileSprite 重複貼，不佔額外記憶體）
-        .tileSprite(-GROUND_EXTRA, G - 4, (W + GROUND_EXTRA * 2) / GROUND_TEXEL, (BOTTOM - G + 4) / GROUND_TEXEL, GROUND_KEY)
+        .tileSprite(-GROUND_EXTRA, G - 4, (W + GROUND_EXTRA * 2) / T, (BOTTOM - G + 4) / T, GK)
         .setOrigin(0, 0)
-        .setScale(GROUND_TEXEL),
+        .setScale(T),
     );
   }
   // 地面（程式畫的地磚＋距離木樁）
