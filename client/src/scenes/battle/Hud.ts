@@ -111,6 +111,8 @@ export class Hud {
             const def = getStatus(s.statusId);
             const name = (def?.name ?? s.statusId).replace(/（.*）/, '');
             if (def?.stackable && def.damagePerTurn) return `${name} -${Math.round(def.damagePerTurn * (s.stacks ?? 1))}/回合`;
+            const mult = def?.incomingMultiplier ?? def?.outgoingMultiplier;
+            if (def?.stackable && mult) return `${name}×${+Math.pow(mult, s.stacks ?? 1).toFixed(2)}（${s.stacks ?? 1}層）`;
             return `${name}${s.remainingTurns >= PERMANENT_TURNS ? '' : '×' + s.remainingTurns}`;
           })
           .join('  '),

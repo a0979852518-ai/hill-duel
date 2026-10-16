@@ -322,26 +322,26 @@ export const ITEMS: ItemDef[] = [
     kind: 'functional',
     role: 'attack',
     name: '竹竿的絲襪',
-    description: '對方受到精神傷害：到你下一次攻擊結束前，對方受到的傷害 ×1.5。',
+    description: '對方受到精神傷害：之後受到的傷害永久 ×1.2，可以一直疊加（每多一層再 ×1.2）。',
     icon: 'assets/items/stockings.png',
     placeholder: { shape: 'rect', color: 0x333333 },
     weightKg: 0.03,
     handler: 'applyStatus',
     targeting: 'none',
-    params: { statusId: 'mental', turns: 2, target: 'enemy' },
+    params: { statusId: 'mental', turns: 999, target: 'enemy' }, // 999 = 永久
   },
   {
     id: 'whey',
     kind: 'functional',
     role: 'attack',
     name: '乳清蛋白',
-    description: '補充蛋白質：你的下一次攻擊傷害 ×1.5。',
+    description: '補充蛋白質：你之後造成的傷害永久 ×1.2，可以一直疊加（每多一層再 ×1.2）。',
     icon: 'assets/items/whey.png',
     placeholder: { shape: 'rect', color: 0x222222 },
     weightKg: 2.3,
     handler: 'applyStatus',
     targeting: 'none',
-    params: { statusId: 'buff', turns: 2, target: 'self' },
+    params: { statusId: 'buff', turns: 999, target: 'self' }, // 999 = 永久
   },
   {
     id: 'porkChop',
@@ -522,8 +522,8 @@ export const STATUSES: StatusDef[] = [
   { id: 'stun', name: '被鎖住', skipTurn: true, color: 0x546e7a, decrementAt: 'start' },
   { id: 'blind', name: '冷氣卡封印', hideDrawOptions: 1, color: 0x4fc3f7, decrementAt: 'end' },
   { id: 'disgust', name: '噁心（傷害減半）', outgoingMultiplier: 0.5, color: 0xc0ca33, decrementAt: 'end' },
-  { id: 'mental', name: '精神傷害（受傷×1.5）', incomingMultiplier: 1.5, color: 0xab47bc, decrementAt: 'start' },
-  { id: 'buff', name: '蛋白質加持（傷害×1.5）', outgoingMultiplier: 1.5, color: 0xff7043, decrementAt: 'end' },
+  { id: 'mental', name: '精神傷害（受傷×1.2/層）', incomingMultiplier: 1.2, stackable: true, color: 0xab47bc, decrementAt: 'start' },
+  { id: 'buff', name: '蛋白質加持（傷害×1.2/層）', outgoingMultiplier: 1.2, stackable: true, color: 0xff7043, decrementAt: 'end' },
 ];
 
 export function getItem(id: string): ItemDef | undefined {

@@ -42,7 +42,8 @@ export class BattleState {
   /** 某玩家目前所有狀態的倍率相乘 */
   private multiplier(seat: Seat, key: 'incomingMultiplier' | 'outgoingMultiplier'): number {
     let m = 1;
-    for (const s of this.fighters[seat].statuses) m *= getStatus(s.statusId)?.[key] ?? 1;
+    // 可累加的狀態：每一層都再乘一次（例如 1.2 疊 3 層 = 1.2³）
+    for (const s of this.fighters[seat].statuses) m *= Math.pow(getStatus(s.statusId)?.[key] ?? 1, s.stacks ?? 1);
     return m;
   }
 
@@ -83,7 +84,7 @@ export class BattleState {
     const def = getStatus(statusId)!;
     const existing = f.statuses.find((s) => s.statusId === statusId);
     if (existing) {
-      // 可累加的（香菸）層數 +1；其他的不疊加，刷新為較長的回合數
+      // 可累加的（香菸、絲襪、乳清）層數 +1；其他的不疊加，刷新為較長的回合數
       if (def.stackable) existing.stacks = (existing.stacks ?? 1) + 1;
       existing.remainingTurns = Math.max(existing.remainingTurns, turns);
     } else f.statuses.push(def.stackable ? { statusId, remainingTurns: turns, stacks: 1 } : { statusId, remainingTurns: turns });
