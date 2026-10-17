@@ -4,8 +4,8 @@
 import * as Phaser from 'phaser';
 import { ARENA } from '../../../../shared/config/game.js';
 import { getItem, ITEMS, type DefenseDef } from '../../../../shared/config/items.js';
-import { defenseRect, launchPoint, placementZone } from '../../../../shared/physics.js';
-import type { DefenseView, Seat } from '../../../../shared/types.js';
+import { defenseRect, launchPoint, placementZone, type Rect } from '../../../../shared/physics.js';
+import { sideDir, type DefenseView, type Seat } from '../../../../shared/types.js';
 import { iconKey } from '../../game/assets.js';
 import { FONT } from './effects.js';
 import { sfx } from '../../game/sfx.js';
@@ -355,7 +355,7 @@ export class AimDisplay {
       return;
     }
     const lp = launchPoint(seat, feetX, bodyScale);
-    const dir = seat === 0 ? 1 : -1;
+    const dir = sideDir(seat);
     const rad = Phaser.Math.DegToRad(angle);
     const ux = Math.cos(rad) * dir,
       uy = -Math.sin(rad);
@@ -433,7 +433,7 @@ export class PlacementOverlay {
     this.scene.tweens.add({ targets: zone, alpha: { from: 0.55, to: 1 }, yoyo: true, repeat: -1, duration: 650 });
     // 提示放在角色前上方（範圍很大，放在範圍頂端會被上方的血條擋住）
     this.hint
-      .setPosition(feetX + (seat === 0 ? 1 : -1) * 420, ARENA.groundY - 430)
+      .setPosition(feetX + sideDir(seat) * 420, ARENA.groundY - 430)
       .setText(
         interactive
           ? touch
@@ -516,11 +516,11 @@ export class TargetOverlay {
       .setVisible(false);
   }
 
-  show(text: string, targets: DefenseView[], interactive: boolean, onPick: (uid: string) => void): void {
+  show(text: string, targets: (DefenseView | { uid: string; rect: Rect })[], interactive: boolean, onPick: (uid: string) => void): void {
     this.hide();
     this.hint.setText(text).setVisible(true);
     for (const d of targets) {
-      const r = defenseRect(d);
+      const r = 'rect' in d ? d.rect : defenseRect(d);
       const box = this.scene.add
         .rectangle(r.x + r.w / 2, r.y + r.h / 2, r.w + 16, r.h + 16, 0xff5252, 0.18)
         .setStrokeStyle(4, 0xff5252)

@@ -3,7 +3,7 @@
 
 import { getCharacter, PLAYABLE_CHARACTERS, type CharacterDef } from '../../../shared/config/characters.js';
 import { getItem } from '../../../shared/config/items.js';
-import { ERROR_TEXT, type AiDifficulty, type ErrorCode, type RoomSnapshot, type Seat } from '../../../shared/types.js';
+import { ERROR_TEXT, playerNo, teamOf, type AiDifficulty, type ErrorCode, type GameMode, type RoomSnapshot, type Seat } from '../../../shared/types.js';
 import { loadName } from '../net/Network.js';
 import { store } from '../state/store.js';
 import { toast } from './toast.js';
@@ -30,6 +30,29 @@ export function clearUi(): void {
   ui().innerHTML = '';
 }
 
+// ------------------------------------------------------------ 模式（1v1 / 2v2），記住上次選的
+const MODE_KEY = 'hillduel.mode';
+function loadMode(): GameMode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'team' ? 'team' : 'duel';
+  } catch {
+    return 'duel';
+  }
+}
+function saveMode(m: GameMode): void {
+  try {
+    localStorage.setItem(MODE_KEY, m);
+  } catch {
+    /* ignore */
+  }
+}
+
+const MODE_ROW = `
+      <div class="mode-row">
+        <button class="mode-btn" data-mode="duel">1v1 單挑</button>
+        <button class="mode-btn" data-mode="team">2v2 組隊</button>
+      </div>`;
+
 /** 手機（觸控）用緊湊版排版；電腦維持原本的排版 */
 function isMobile(): boolean {
   return matchMedia('(pointer: coarse)').matches;
@@ -38,7 +61,8 @@ function isMobile(): boolean {
 const DESKTOP_MENU = (message?: string) => `
     <div class="panel" data-screen="menu">
       <h1 class="title">屏大之戰</h1>
-      <p class="subtitle">雙人線上・回合制砲擊對戰（也能單挑電腦）</p>
+      <p class="subtitle">線上回合制砲擊對戰・1v1 單挑或 2v2 組隊（也能打電腦）</p>
+      ${MODE_ROW}
       <div class="field">
         <label for="name">你的名字</label>
         <input id="name" maxlength="12" placeholder="輸入暱稱" value="${esc(loadName())}" />
@@ -53,7 +77,7 @@ const DESKTOP_MENU = (message?: string) => `
         <input id="code" class="code" maxlength="6" placeholder="ABC123" autocomplete="off" />
       </div>
       <button class="btn secondary block" data-act="join">加入房間</button>
-      <div class="divider">單人對戰電腦</div>
+      <div class="divider" data-ai-title>單人對戰電腦</div>
       <div class="ai-row">
         <button class="btn ai-btn d-easy" data-ai="easy">弱</button>
         <button class="btn ai-btn d-normal" data-ai="normal">中</button>
@@ -66,7 +90,7 @@ const DESKTOP_MENU = (message?: string) => `
 const MOBILE_MENU = (message?: string) => `
     <div class="panel menu" data-screen="menu">
       <h1 class="title">屏大之戰</h1>
-      <p class="subtitle">雙人線上・回合制砲擊對戰（也能單挑電腦）</p>
+      ${MODE_ROW}
       <div class="menu-cols">
         <div class="menu-col">
           <div class="field">
@@ -74,7 +98,7 @@ const MOBILE_MENU = (message?: string) => `
             <input id="name" maxlength="12" placeholder="輸入暱稱" value="${esc(loadName())}" />
           </div>
           <button class="btn block big" data-act="match">隨機匹配對手</button>
-          <div class="divider">單人對戰電腦</div>
+          <div class="divider" data-ai-title>單人對戰電腦</div>
           <div class="ai-row">
             <button class="btn ai-btn d-easy" data-ai="easy">弱</button>
             <button class="btn ai-btn d-normal" data-ai="normal">中</button>
@@ -106,11 +130,27 @@ export function showMenu(message?: string): void {
   const err = el.querySelector<HTMLElement>('[data-err]')!;
   const buttons = el.querySelectorAll<HTMLButtonElement>('button');
   const lock = (b: boolean) => buttons.forEach((x) => (x.disabled = b));
+  // 1v1 / 2v2 切換：按鈕文字跟著換
+  let mode = loadMode();
+  const applyMode = () => {
+    el.querySelectorAll<HTMLElement>('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
+    el.querySelector('[data-act=match]')!.textContent = mode === 'team' ? '隨機匹配（2v2）' : '隨機匹配對手';
+    el.querySelector('[data-act=create]')!.textContent = mode === 'team' ? '創建 2v2 房間' : '創建房間';
+    el.querySelector('[data-ai-title]')!.textContent = mode === 'team' ? '和電腦組隊打電腦（你＋1 電腦 vs 2 電腦）' : '單人對戰電腦';
+  };
+  el.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
+    b.addEventListener('click', () => {
+      mode = b.dataset.mode as GameMode;
+      saveMode(mode);
+      applyMode();
+    }),
+  );
+  applyMode();
 
   el.querySelector('[data-act=create]')!.addEventListener('click', async () => {
     lock(true);
     err.textContent = '';
-    const res = await store.net.createRoom(name.value.trim());
+    const res = await store.net.createRoom(name.value.trim(), mode);
     lock(false);
     if (!res.ok) err.textContent = errText(res.error);
     else window.dispatchEvent(new CustomEvent('hillduel:route'));
@@ -119,16 +159,17 @@ export function showMenu(message?: string): void {
   el.querySelector('[data-act=match]')!.addEventListener('click', async () => {
     lock(true);
     err.textContent = '';
-    const res = await store.net.joinMatch(name.value.trim());
+    const res = await store.net.joinMatch(name.value.trim(), mode);
     lock(false);
     if (!res.ok) err.textContent = errText(res.error);
-    else showMatching(name.value.trim());
+    // 2v2 剛好湊滿 4 人時，match:found 可能比 ack 先到：已經在房間裡就不用顯示排隊畫面
+    else if (!store.net.session) showMatching(name.value.trim(), mode, res.queued);
   });
   el.querySelectorAll<HTMLButtonElement>('[data-ai]').forEach((b) =>
     b.addEventListener('click', async () => {
       lock(true);
       err.textContent = '';
-      const res = await store.net.createAiRoom(name.value.trim(), b.dataset.ai as AiDifficulty);
+      const res = await store.net.createAiRoom(name.value.trim(), b.dataset.ai as AiDifficulty, mode);
       lock(false);
       if (!res.ok) err.textContent = errText(res.error);
       else window.dispatchEvent(new CustomEvent('hillduel:route'));
@@ -155,11 +196,14 @@ export function showMenu(message?: string): void {
 
 // ------------------------------------------------------------ 隨機匹配中
 
-export function showMatching(name: string): void {
+export function showMatching(name: string, mode: GameMode = 'duel', queued = 1): void {
+  const team = mode === 'team';
   const el = h(`
     <div class="panel" data-screen="matching">
-      <h2>尋找對手中<span class="waiting-dots"></span></h2>
+      <h2>${team ? '尋找 2v2 玩家中' : '尋找對手中'}<span class="waiting-dots"></span></h2>
       <p class="subtitle">已經等了 <b data-sec>0</b> 秒</p>
+      ${team ? `<p class="subtitle">排隊中：<b data-q>${queued}</b> / 4 人（湊滿 4 人自動開打）</p>` : ''}
+      ${team ? `<button class="btn block" data-act="fill">人不夠？用電腦補滿開打</button>` : ''}
       <p class="subtitle" data-hint></p>
       <div class="ai-row" data-ai-row style="display:none">
         <button class="btn ai-btn d-easy" data-ai="easy">弱</button>
@@ -177,24 +221,33 @@ export function showMatching(name: string): void {
     const s = Math.floor((Date.now() - t0) / 1000);
     sec.textContent = String(s);
     // 等太久：提供改打電腦（不會自動取消排隊，還是可能配到人）
-    if (s >= 30) {
+    if (s >= 30 && !team) {
       el.querySelector<HTMLElement>('[data-hint]')!.textContent = '目前線上的人比較少，要不要先跟電腦打？';
       el.querySelector<HTMLElement>('[data-ai-row]')!.style.display = '';
     }
   }, 500);
   // 斷線重連後伺服器已經把我們移出隊伍：重新排
   const offStatus = store.net.onStatus(({ connected }) => {
-    if (connected && el.isConnected) void store.net.joinMatch(name);
+    if (connected && el.isConnected) void store.net.joinMatch(name, mode);
+  });
+  const offQueue = store.net.onQueue((n) => {
+    const q = el.querySelector('[data-q]');
+    if (q) q.textContent = String(n);
   });
   const stop = () => {
     clearInterval(timer);
     off();
     offStatus();
+    offQueue();
   };
+  el.querySelector('[data-act=fill]')?.addEventListener('click', async () => {
+    const res = await store.net.fillMatchAi();
+    if (!res.ok) el.querySelector('[data-err]')!.textContent = errText(res.error);
+  });
   // 配到了：伺服器已經把我們放進房間，切到角色選擇
   const off = store.net.onMatchFound(() => {
     stop();
-    toast('找到對手了！');
+    toast(team ? '人到齊了！' : '找到對手了！');
     window.dispatchEvent(new CustomEvent('hillduel:route'));
   });
   el.querySelector('[data-act=cancel]')!.addEventListener('click', () => {
@@ -217,6 +270,7 @@ export function showMatching(name: string): void {
 // ------------------------------------------------------------ 等待第二位玩家
 
 export function showWaiting(snap: RoomSnapshot): void {
+  if (snap.mode === 'team') return showWaitingTeam(snap);
   const existing = ui().querySelector('[data-screen=waiting]');
   const slots = snap.players
     .map(
@@ -256,6 +310,89 @@ export function showWaiting(snap: RoomSnapshot): void {
     window.dispatchEvent(new CustomEvent('hillduel:left'));
   });
   ui().replaceChildren(el);
+}
+
+function copyCode(el: HTMLElement, code: string): void {
+  navigator.clipboard
+    .writeText(code)
+    .then(() => toast('已複製房號：' + code))
+    .catch(() => {
+      const range = document.createRange();
+      range.selectNodeContents(el.querySelector('[data-code]')!);
+      getSelection()?.removeAllRanges();
+      getSelection()?.addRange(range);
+      toast('請按 Ctrl+C / 長按複製房號');
+    });
+}
+
+/** 2v2 等待房間：左隊 1、2 號，右隊 3、4 號；點空位可以換過去；空位可以用電腦補滿 */
+function showWaitingTeam(snap: RoomSnapshot): void {
+  const me = store.mySeat;
+  const slot = (seat: Seat) => {
+    const p = snap.players[seat];
+    const mine = p && p.seat === me;
+    return `<div class="player-slot ${p ? '' : 'empty'} ${mine ? 'mine' : ''}" data-seat="${seat}">
+      <div class="seat">${playerNo(seat, 'team')} 號</div>
+      <div class="name">${p ? esc(p.name) + (mine ? '（你）' : '') : '空位'}</div>
+      ${p && !p.connected ? '<div class="offline">斷線中</div>' : ''}
+      ${!p ? '<div class="swap">點這裡換過來</div>' : ''}</div>`;
+  };
+  const teams = `
+    <div class="team-col t0"><div class="team-title">左隊</div>${slot(0)}${slot(2)}</div>
+    <div class="team-col t1"><div class="team-title">右隊</div>${slot(1)}${slot(3)}</div>`;
+  let el = ui().querySelector<HTMLElement>('[data-screen=waiting]');
+  if (!el) {
+    el = h(`
+      <div class="panel team-wait" data-screen="waiting">
+        <h2>2v2 房間</h2>
+        <p class="subtitle">把房號傳給朋友；出手順序 1 → 3 → 2 → 4</p>
+        <div class="wait-cols">
+          <div class="wait-main">
+            <div class="room-code"><span data-code>${snap.code}</span><button class="btn secondary" data-act="copy">複製</button></div>
+            <div class="team-slots" data-slots></div>
+          </div>
+          <div class="wait-side">
+            <div class="divider">空位用電腦補滿</div>
+            <div class="ai-row">
+              <button class="btn ai-btn d-easy" data-ai="easy">弱</button>
+              <button class="btn ai-btn d-normal" data-ai="normal">中</button>
+              <button class="btn ai-btn d-hard" data-ai="hard">強</button>
+              <button class="btn ai-btn d-nightmare" data-ai="nightmare">夢魘</button>
+            </div>
+            <div class="error" data-err></div>
+            <button class="btn secondary block" data-act="leave">離開房間</button>
+          </div>
+        </div>
+      </div>`);
+    const box = el;
+    el.querySelector('[data-act=copy]')!.addEventListener('click', () => copyCode(box, snap.code));
+    el.querySelector('[data-act=leave]')!.addEventListener('click', () => {
+      store.net.leaveRoom();
+      window.dispatchEvent(new CustomEvent('hillduel:left'));
+    });
+    el.querySelectorAll<HTMLButtonElement>('[data-ai]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const res = await store.net.call('room:fillAi', { difficulty: b.dataset.ai as AiDifficulty });
+        if (!res.ok) box.querySelector('[data-err]')!.textContent = errText(res.error);
+      }),
+    );
+    el.querySelector('[data-slots]')!.addEventListener('click', async (ev) => {
+      const target = (ev.target as HTMLElement).closest<HTMLElement>('.player-slot.empty');
+      if (!target) return;
+      const res = await store.net.changeSeat(Number(target.dataset.seat) as Seat);
+      if (!res.ok) toast(errText(res.error), true);
+      else window.dispatchEvent(new CustomEvent('hillduel:route'));
+    });
+    ui().replaceChildren(el);
+  }
+  el.querySelector('[data-slots]')!.innerHTML = teams;
+}
+
+/** 角色選擇時別人的標籤：你 / 隊友 / 對手 */
+function pickLabel(snap: RoomSnapshot, seat: Seat, mySeat: Seat): string {
+  if (seat === mySeat) return '你';
+  if (snap.mode === 'team') return teamOf(seat) === teamOf(mySeat) ? '隊友' : '對手';
+  return '對手';
 }
 
 // ------------------------------------------------------------ 角色選擇
@@ -330,13 +467,13 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
     card.classList.toggle('locked', !!me?.confirmed);
     card.querySelector('.pickers')!.innerHTML = snap.players
       .filter((p) => p && p.characterId === id)
-      .map((p) => `<span class="pick-tag p${p!.seat}">${p!.seat === mySeat ? '你' : '對手'}</span>`)
+      .map((p) => `<span class="pick-tag p${p!.seat}">${pickLabel(snap, p!.seat, mySeat)}</span>`)
       .join('');
   });
   el.querySelector('[data-status]')!.innerHTML = snap.players
     .map((p) =>
       p
-        ? `<div><b>${esc(p.name)}</b>${p.seat === mySeat ? '（你）' : ''}　${
+        ? `<div class="t${teamOf(p.seat)}"><b>${esc(p.name)}</b>${p.seat === mySeat ? '（你）' : ''}　${
             p.confirmed ? '<span class="ok">✔ 已確認</span>' : p.characterId ? `選了${esc(getCharacter(p.characterId)?.name ?? '')}` : '選擇中…'
           }${p.connected ? '' : ' <span class="offline">斷線中</span>'}</div>`
         : '<div>等待中</div>',
@@ -344,7 +481,7 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
     .join('');
   const btn = el.querySelector<HTMLButtonElement>('[data-act=confirm]')!;
   btn.disabled = !me?.characterId || !!me?.confirmed;
-  btn.textContent = me?.confirmed ? '等待對手確認…' : me?.characterId ? `用 ${getCharacter(me.characterId)?.name ?? ''} 出戰` : '先點一個角色';
+  btn.textContent = me?.confirmed ? (snap.mode === 'team' ? '等待其他人確認…' : '等待對手確認…') : me?.characterId ? `用 ${getCharacter(me.characterId)?.name ?? ''} 出戰` : '先點一個角色';
 }
 
 /** 電腦版角色選擇（原本的大卡片） */
@@ -427,13 +564,13 @@ function showCharacterSelectDesktop(snap: RoomSnapshot, mySeat: Seat): void {
     card.classList.toggle('locked', !!me?.confirmed);
     card.querySelector('.pickers')!.innerHTML = snap.players
       .filter((p) => p && p.characterId === id)
-      .map((p) => `<span class="pick-tag p${p!.seat}">${p!.seat === mySeat ? '你' : '對手'}</span>`)
+      .map((p) => `<span class="pick-tag p${p!.seat}">${pickLabel(snap, p!.seat, mySeat)}</span>`)
       .join('');
   });
   el.querySelector('[data-status]')!.innerHTML = snap.players
     .map((p) =>
       p
-        ? `<div><b>${esc(p.name)}</b>${p.seat === mySeat ? '（你）' : ''}<br>${
+        ? `<div class="t${teamOf(p.seat)}"><b>${esc(p.name)}</b>${p.seat === mySeat ? '（你）' : ''}<br>${
             p.confirmed ? '<span class="ok">✔ 已確認</span>' : p.characterId ? '選擇中…' : '尚未選擇'
           }${p.connected ? '' : ' <span class="offline">斷線中</span>'}</div>`
         : '<div>等待中</div>',
@@ -441,7 +578,7 @@ function showCharacterSelectDesktop(snap: RoomSnapshot, mySeat: Seat): void {
     .join('');
   const btn = el.querySelector<HTMLButtonElement>('[data-act=confirm]')!;
   btn.disabled = !me?.characterId || !!me?.confirmed;
-  btn.textContent = me?.confirmed ? '等待對手確認…' : '確認角色';
+  btn.textContent = me?.confirmed ? (snap.mode === 'team' ? '等待其他人確認…' : '等待對手確認…') : '確認角色';
 }
 
 function fillPortrait(box: HTMLElement, c: CharacterDef): void {
@@ -490,16 +627,18 @@ let resultPending = false;
 export function showGameOver(snap: RoomSnapshot, mySeat: Seat): void {
   if (resultPending || ui().querySelector('[data-screen=result]')) return;
   resultPending = true;
-  const win = snap.winnerSeat === mySeat;
-  const winner = snap.players[snap.winnerSeat ?? 0];
-  const loser = snap.players[snap.winnerSeat === 0 ? 1 : 0];
+  const wt = snap.winnerTeam ?? (snap.winnerSeat !== null ? teamOf(snap.winnerSeat) : 0);
+  const win = teamOf(mySeat) === wt;
+  const winners = snap.players.filter((p) => p && teamOf(p.seat) === wt);
+  const losers = snap.players.filter((p) => p && teamOf(p.seat) !== wt);
+  const names = (ps: typeof winners) => ps.map((p) => `<b>${esc(p!.name)}</b>（HP ${Math.max(0, p!.hp)}）`).join('、');
   const reason = snap.endReason === 'forfeit' ? '（對手離開或斷線過久）' : '';
   const el = h(`
     <div class="panel result ${win ? 'win' : 'lose'}" data-screen="result">
       <div class="big">${win ? '勝利！' : '失敗…'}</div>
       <div class="detail">
-        🏆 勝利：<b>${esc(winner?.name ?? '')}</b>（剩餘 HP ${winner?.hp ?? 0}）<br>
-        💥 落敗：<b>${esc(loser?.name ?? '')}</b> ${esc(reason)}
+        🏆 勝利：${names(winners)}<br>
+        💥 落敗：${names(losers)} ${esc(reason)}
       </div>
       <button class="btn block" data-act="menu">返回主選單</button>
     </div>`);

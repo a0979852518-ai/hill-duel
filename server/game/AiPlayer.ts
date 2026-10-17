@@ -11,7 +11,7 @@ import { ARENA } from '../../shared/config/game.js';
 import { getItem, type DefenseDef, type ItemDef, type ThrowableDef } from '../../shared/config/items.js';
 import { headLineY } from '../../shared/physics.js';
 import { itemScaleFor } from '../../shared/config/characters.js';
-import type { AiDifficulty, Seat } from '../../shared/types.js';
+import { sideDir, teamOf, type AiDifficulty, type Seat } from '../../shared/types.js';
 import type { Battle } from './Battle.js';
 import { validatePlacement } from './DefenseSystem.js';
 
@@ -107,9 +107,31 @@ export class AiPlayer {
         this.later(1500 + Math.random() * 800, () => still() && this.doPlace(t.turnId));
         break;
       case 'target':
-        this.later(1400 + Math.random() * 600, () => still() && this.battle.useFunctional(this.seat, t.turnId));
+        this.later(1400 + Math.random() * 600, () => {
+          if (!still()) return;
+          // 拆除類：挑一個敵方防禦道具；2v2 的單一目標：打目前選定的敵人
+          const st = this.battle.state;
+          const enemyDef = st.defenses.find((d) => teamOf(d.owner) !== teamOf(this.seat));
+          this.battle.useFunctional(this.seat, t.turnId, enemyDef?.uid, this.target());
+        });
         break;
     }
+  }
+
+  /** 這回合要針對的敵人：聰明的挑血最少的，不然隨便挑一個還活著的 */
+  private targetSeat: Seat | null = null;
+  private targetTurn = -1;
+  target(): Seat {
+    const st = this.battle.state;
+    const t = this.battle.turnView().turnId;
+    const alive = st.aliveEnemiesOf(this.seat);
+    if (this.targetTurn === t && this.targetSeat !== null && alive.includes(this.targetSeat)) return this.targetSeat;
+    const pool = alive.length ? alive : st.enemiesOf(this.seat);
+    let pick = pool[Math.floor(Math.random() * pool.length)];
+    if (Math.random() < this.profile.smart) pick = [...pool].sort((a, b) => st.fighters[a].hp - st.fighters[b].hp)[0];
+    this.targetSeat = pick;
+    this.targetTurn = t;
+    return pick;
   }
 
   // ------------------------------------------------------------ 選道具
@@ -135,7 +157,7 @@ export class AiPlayer {
   private scoreItem(item: ItemDef): number {
     const st = this.battle.state;
     const me = st.fighters[this.seat],
-      foe = st.fighters[this.seat === 0 ? 1 : 0];
+      foe = st.fighters[this.target()];
     const hitRate = this.difficulty === 'nightmare' ? 0.9 : this.difficulty === 'hard' ? 0.6 : 0.35;
     if (item.kind === 'throwable' && item.selfLaunch) return 1; // 移動：沒什麼用
     if (item.kind === 'throwable') {
@@ -171,7 +193,7 @@ export class AiPlayer {
       }
       case 'applyStatus': {
         const statusId = String(item.params.statusId);
-        const target: Seat = item.params.target === 'self' ? this.seat : this.seat === 0 ? 1 : 0;
+        const target: Seat = item.params.target === 'self' ? this.seat : this.target();
         // 對方免疫（捲毛不吃絲襪）→ 用了等於白費
         if (st.traits(target).immuneStatuses?.includes(statusId)) return -10;
         // 獸控：下回合傷害 ×2，約等於多打一發的期望傷害
@@ -210,8 +232,8 @@ export class AiPlayer {
    */
   solve(item: ThrowableDef): { angle: number; power: number; score: number } {
     const st = this.battle.state;
-    const foe: Seat = this.seat === 0 ? 1 : 0;
-    const dir = this.seat === 0 ? 1 : -1;
+    const foe: Seat = this.target();
+    const dir = sideDir(this.seat);
     const foeX = st.physics.getCharX(foe);
     const p = this.profile;
     let best = { angle: 40, power: 0.85, score: -Infinity };
@@ -257,13 +279,13 @@ export class AiPlayer {
       for (let q = h.power - step; q > h.power - 0.08; q -= step) {
         const r = this.trial(item, h.angle, q);
         if (this.scoreTrial(r, foe, foeX) < thr) break;
-        if (r.y < this.headY()) headHits++;
+        if (r.y < this.headY(foe)) headHits++;
         lo2 = q;
       }
       for (let q = h.power + step; q < h.power + 0.08 && q <= 1; q += step) {
         const r = this.trial(item, h.angle, q);
         if (this.scoreTrial(r, foe, foeX) < thr) break;
-        if (r.y < this.headY()) headHits++;
+        if (r.y < this.headY(foe)) headHits++;
         hi2 = q;
       }
       // 夢魘：寬度一樣時偏好會打到頭的
@@ -277,8 +299,7 @@ export class AiPlayer {
   }
 
   /** 對手的頭部判定線（矮的角色比較低） */
-  private headY(): number {
-    const foe: Seat = this.seat === 0 ? 1 : 0;
+  private headY(foe: Seat): number {
     return headLineY(this.battle.state.physics.getCharScale(foe));
   }
 
@@ -293,11 +314,13 @@ export class AiPlayer {
 
   private scoreTrial(r: { kind: string; x: number; y: number; hitSeat?: Seat; bounces?: number }, foe: Seat, foeX: number): number {
     if (r.kind === 'character' && r.hitSeat === foe) {
-      const head = r.y < this.headY();
+      const head = r.y < this.headY(foe);
       const bounce = Math.pow(0.5, r.bounces ?? 0);
       return 1000 * bounce + (head ? (this.profile.aimHead ? 500 : 50) : 0);
     }
-    if (r.kind === 'character') return -2000; // 打到自己
+    // 打到另一個還活著的敵人也不錯
+    if (r.kind === 'character' && r.hitSeat !== undefined && teamOf(r.hitSeat) !== teamOf(this.seat)) return 600 * Math.pow(0.5, r.bounces ?? 0);
+    if (r.kind === 'character') return -2000; // 打到自己或隊友
     if (r.kind === 'out') return -1500;
     return -Math.abs(r.x - foeX) - (r.kind === 'defense' ? 0 : 50);
   }
@@ -309,7 +332,7 @@ export class AiPlayer {
     if (!def || def.kind !== 'defense') return;
     const st = this.battle.state;
     const x0 = st.physics.getCharX(this.seat);
-    const dir = this.seat === 0 ? 1 : -1;
+    const dir = sideDir(this.seat);
     const G = ARENA.groundY;
     const cands: [number, number][] = [];
     if (def.wearable) cands.push([x0, G - 150 * st.physics.getCharScale(this.seat) - def.size.h / 2 - 8]); // 鋼盔戴頭上
@@ -318,6 +341,8 @@ export class AiPlayer {
     for (const dx of near) cands.push([x0 + dir * dx, G - def.size.h / 2 - 2]);
     // 疊在現有道具上面
     for (const d of st.defenses.filter((x) => x.owner === this.seat)) cands.push([d.x, d.y - d.h / 2 - def.size.h / 2 - 4]);
+    // 都放不下（例如隊友站在那裡）：在前方隨便找個空地
+    for (let i = 0; i < 40; i++) cands.push([x0 + dir * (100 + Math.random() * 700), G - def.size.h / 2 - 2]);
     for (const [x, y] of cands) {
       if (!validatePlacement(st, this.seat, def, Math.round(x), Math.round(y))) {
         this.battle.placeDefense(this.seat, turnId, Math.round(x), Math.round(y));

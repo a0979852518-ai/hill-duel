@@ -3,7 +3,7 @@
 
 import * as Phaser from 'phaser';
 import { ARENA, CAMERA } from '../../../../shared/config/game.js';
-import type { Seat } from '../../../../shared/types.js';
+import { sideDir, type Seat } from '../../../../shared/types.js';
 
 interface Shot {
   x: number;
@@ -29,17 +29,19 @@ export class CameraDirector {
     this.target = { ...this.cur };
   }
 
-  /** 雙方都在畫面內的遠景 */
-  wideShot(xs: [number, number], rate = 2.4): Shot {
-    const span = Math.abs(xs[1] - xs[0]) + 640;
-    const zoom = Phaser.Math.Clamp(ARENA.width / span, 0.38, CAMERA.followZoom);
-    return { x: (xs[0] + xs[1]) / 2, y: centerYFor(zoom, 170), zoom, rate };
+  /** 所有人都在畫面內的遠景 */
+  wideShot(xs: number[], rate = 2.4): Shot {
+    const lo = Math.min(...xs),
+      hi = Math.max(...xs);
+    const span = hi - lo + 640;
+    const zoom = Phaser.Math.Clamp(ARENA.width / span, 0.34, CAMERA.followZoom);
+    return { x: (lo + hi) / 2, y: centerYFor(zoom, 170), zoom, rate };
   }
 
   /** 對準某個角色，鏡頭稍微往對手方向偏，前方留比較多空間 */
   seatShot(seat: Seat, x: number, rate = 2.6): Shot {
     const zoom = CAMERA.followZoom;
-    const dir = seat === 0 ? 1 : -1;
+    const dir = sideDir(seat);
     return { x: x + dir * 430, y: centerYFor(zoom), zoom, rate };
   }
 

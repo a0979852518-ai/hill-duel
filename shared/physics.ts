@@ -5,7 +5,7 @@
 // ============================================================
 
 import { ARENA } from './config/game.js';
-import type { DefenseView, Seat } from './types.js';
+import { sideDir, type DefenseView, type GameMode, type Seat } from './types.js';
 
 export interface Rect {
   x: number;
@@ -31,14 +31,14 @@ export function defenseRect(d: Pick<DefenseView, 'x' | 'y' | 'w' | 'h'>): Rect {
 }
 
 export function launchPoint(seat: Seat, feetX: number, scale = 1): { x: number; y: number } {
-  const dir = seat === 0 ? 1 : -1;
+  const dir = sideDir(seat);
   return { x: feetX + ARENA.launchOffset.x * dir * scale, y: ARENA.groundY + ARENA.launchOffset.y * scale };
 }
 
 /** 防禦道具放手位置的合法區域（跟著角色位置移動） */
 export function placementZone(seat: Seat, feetX: number): Rect {
   const z = ARENA.placementZone;
-  const dir = seat === 0 ? 1 : -1;
+  const dir = sideDir(seat);
   const x0 = dir > 0 ? feetX - z.back : feetX - z.front;
   return { x: x0, y: ARENA.groundY - z.top, w: z.back + z.front, h: z.top - 20 };
 }
@@ -56,4 +56,14 @@ export function circleHitsRect(cx: number, cy: number, radius: number, r: Rect):
 
 export function defenseBlocks(def: { blocks: 'all' | string[] }, tags: string[]): boolean {
   return def.blocks === 'all' || tags.some((t) => (def.blocks as string[]).includes(t));
+}
+
+/** 某個座位的起始腳底 x */
+export function startXOf(seat: Seat, mode: GameMode = 'duel'): number {
+  return mode === 'team' ? ARENA.teamStartX[seat] : ARENA.characterStartX[seat as 0 | 1];
+}
+
+/** 可移動範圍（依隊伍） */
+export function xRangeOf(seat: Seat): readonly [number, number] {
+  return ARENA.characterXRange[seat % 2];
 }

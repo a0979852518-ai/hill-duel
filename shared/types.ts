@@ -2,7 +2,22 @@
 // 前後端共用的資料型別與 Socket.IO 事件定義
 // ============================================================
 
-export type Seat = 0 | 1;
+/**
+ * 座位：1v1 用 0、1；2v2 用 0~3。
+ * 隊伍 = 座位 % 2（0、2 一隊在左邊；1、3 一隊在右邊），出手順序就是 0 → 1 → 2 → 3。
+ */
+export type Seat = 0 | 1 | 2 | 3;
+export type Team = 0 | 1;
+/** duel = 1v1，team = 2v2 組隊 */
+export type GameMode = 'duel' | 'team';
+
+export const teamOf = (seat: Seat): Team => (seat % 2) as Team;
+/** 面向：左隊往右（1），右隊往左（-1） */
+export const sideDir = (seat: Seat): 1 | -1 => (seat % 2 === 0 ? 1 : -1);
+export const seatCountOf = (mode: GameMode): number => (mode === 'team' ? 4 : 2);
+export const seatsOf = (mode: GameMode): Seat[] => (mode === 'team' ? [0, 1, 2, 3] : [0, 1]);
+/** 顯示用的玩家編號（2v2：1、2 一隊，3、4 一隊） */
+export const playerNo = (seat: Seat, mode: GameMode): number => (mode === 'team' ? [1, 3, 2, 4][seat] : seat + 1);
 
 export type RoomStatus = 'waiting' | 'characterSelect' | 'battle' | 'gameOver';
 
@@ -107,7 +122,7 @@ export interface PhysicsFrames {
   d: Record<string, [number, number, number][]>;
   gone: Record<string, number>;
   /** 被擊退的角色：座位 → [腳底x, 腳底y-地面, 傾斜角, 身體翻面(1~-1), 連續動作圖(0=一般, 1~5)][]（只有會動的才會出現） */
-  c?: Partial<Record<'0' | '1', [number, number, number, number, number][]>>;
+  c?: Partial<Record<string, [number, number, number, number, number][]>>;
 }
 
 export interface TimerView {
@@ -134,10 +149,14 @@ export interface TurnView {
 export interface RoomSnapshot {
   code: string;
   status: RoomStatus;
-  players: [PlayerView | null, PlayerView | null];
+  mode: GameMode;
+  /** 依座位排（1v1 兩個、2v2 四個） */
+  players: (PlayerView | null)[];
   defenses: DefenseView[];
   turn: TurnView | null;
+  /** 獲勝的隊伍（1v1 時就是獲勝者的座位） */
   winnerSeat: Seat | null;
+  winnerTeam: Team | null;
   endReason: 'hp' | 'forfeit' | null;
   /** 這場用哪張地圖（shared/config/maps.ts） */
   mapId?: string;
@@ -167,6 +186,8 @@ export interface DamageEntry {
   survived?: boolean;
   /** 自己丟的東西打到自己 */
   self?: boolean;
+  /** 打到隊友 */
+  ally?: boolean;
 }
 
 export interface HealEntry {
@@ -231,13 +252,16 @@ export type BattleEvent =
       itemId: string;
       handler: string;
       targetUid?: string;
+      targetSeat?: Seat;
       damages: DamageEntry[];
       heals: HealEntry[];
       defenseUpdates: DefenseUpdate[];
       statusApplied: { seat: Seat; statusId: string; turns: number; immune?: boolean }[];
     }
   | { type: 'skip'; seat: Seat; reason: 'drawTimeout' | 'useTimeout' | 'stunned' }
-  | { type: 'gameOver'; winnerSeat: Seat; reason: 'hp' | 'forfeit' };
+  | { type: 'gameOver'; winnerSeat: Seat; winnerTeam: Team; reason: 'hp' | 'forfeit' }
+  /** 2v2：有人陣亡（之後的回合跳過） */
+  | { type: 'eliminated'; seat: Seat };
 
 export type ErrorCode =
   | 'ROOM_NOT_FOUND'
@@ -253,7 +277,7 @@ export type ErrorCode =
 
 export const ERROR_TEXT: Record<ErrorCode, string> = {
   ROOM_NOT_FOUND: '找不到這個房號，請確認後再試。',
-  ROOM_FULL: '這個房間已經滿了（最多 2 人）。',
+  ROOM_FULL: '這個房間已經滿了。',
   GAME_STARTED: '這個房間的遊戲已經開始，無法加入。',
   NOT_IN_ROOM: '你目前不在房間內。',
   NOT_YOUR_TURN: '現在不是你的回合。',
@@ -274,13 +298,19 @@ export interface JoinResult {
 
 /** 客戶端 → 伺服器 */
 export interface ClientToServerEvents {
-  'room:create': (p: { name: string }, ack: Ack<JoinResult>) => void;
+  'room:create': (p: { name: string; mode?: GameMode }, ack: Ack<JoinResult>) => void;
   'room:join': (p: { code: string; name: string }, ack: Ack<JoinResult>) => void;
   /** 隨機匹配：排進隊伍（配到時伺服器送 match:found） */
-  'match:join': (p: { name: string }, ack: Ack<{ queued: number }>) => void;
+  'match:join': (p: { name: string; mode?: GameMode }, ack: Ack<{ queued: number }>) => void;
   'match:cancel': () => void;
+  /** 2v2 隨機匹配等太久：用目前排隊的人＋電腦補滿開打 */
+  'match:fillAi': (ack: Ack) => void;
   /** 單人對戰電腦 */
-  'room:createAi': (p: { name: string; difficulty: AiDifficulty }, ack: Ack<JoinResult>) => void;
+  'room:createAi': (p: { name: string; difficulty: AiDifficulty; mode?: GameMode }, ack: Ack<JoinResult>) => void;
+  /** 房間裡的空位用電腦補滿 */
+  'room:fillAi': (p: { difficulty: AiDifficulty }, ack: Ack) => void;
+  /** 等待中換到另一個空位（換隊） */
+  'room:seat': (p: { seat: Seat }, ack: Ack) => void;
   'room:resume': (p: { code: string; token: string }, ack: Ack<JoinResult>) => void;
   'room:leave': () => void;
   'char:select': (p: { characterId: string }, ack: Ack) => void;
@@ -292,7 +322,8 @@ export interface ClientToServerEvents {
   /** 一次送出角度＋力道（拖曳瞄準、按住蓄力、放開投擲） */
   'turn:throw': (p: { turnId: number; angle: number; power: number }, ack: Ack) => void;
   'turn:place': (p: { turnId: number; x: number; y: number }, ack: Ack) => void;
-  'turn:functional': (p: { turnId: number; targetUid?: string }, ack: Ack) => void;
+  /** targetSeat：2v2 時要對哪個敵人發動 */
+  'turn:functional': (p: { turnId: number; targetUid?: string; targetSeat?: Seat }, ack: Ack) => void;
   'turn:aimPreview': (p: { turnId: number; angle?: number; power?: number }) => void;
 }
 
@@ -303,4 +334,6 @@ export interface ServerToClientEvents {
   'room:closed': (p: { reason: string }) => void;
   /** 隨機匹配成功：已經被放進新房間 */
   'match:found': (r: JoinResult) => void;
+  /** 2v2 排隊中：目前排了幾個人 */
+  'match:queue': (p: { queued: number }) => void;
 }

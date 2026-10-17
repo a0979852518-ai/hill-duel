@@ -9,11 +9,13 @@
 
 import * as Phaser from 'phaser';
 import { AIM_CONFIG, ARENA, CAMERA } from '../../../shared/config/game.js';
-import { getItem, type DefenseDef } from '../../../shared/config/items.js';
+import { getItem, itemTargetsEnemy, type DefenseDef } from '../../../shared/config/items.js';
 import { bodyScaleOf, getCharacter, scaledDefenseSize } from '../../../shared/config/characters.js';
-import { characterHitbox, defenseRect, launchPoint } from '../../../shared/physics.js';
+import { characterHitbox, defenseRect, launchPoint, startXOf } from '../../../shared/physics.js';
 import {
   ERROR_TEXT,
+  sideDir,
+  teamOf,
   type BattleEvent,
   type DefenseUpdate,
   type DefenseView,
@@ -108,7 +110,7 @@ export class BattleScene extends Phaser.Scene {
     this.ui = ui;
     this.speedLines = new SpeedLines(ui);
     this.markers = new OffscreenMarkers(ui);
-    this.hud = new Hud(ui);
+    this.hud = new Hud(ui, store.snapshot?.mode ?? 'duel');
     this.slot = new SlotMachine(ui);
     this.cards = new ChoiceCards(ui);
     this.aim = new AimDisplay(this, ui);
@@ -170,12 +172,13 @@ export class BattleScene extends Phaser.Scene {
   private playIntro(snap: RoomSnapshot): void {
     if (this.introPlayed) return;
     this.introPlayed = true;
-    const xs: [number, number] = [this.xOf(0), this.xOf(1)];
+    const xs = this.seats().map((s) => this.xOf(s));
     this.director.set(this.director.wideShot(xs), true);
     if (snap.status !== 'battle') return;
     this.enqueue(async () => {
       const names = snap.players.map((p) => p?.name ?? '');
-      void banner(this.ui, `${names[0]}  VS  ${names[1]}`, 0x2b2118, CAMERA.introHoldMs - 400);
+      const vs = snap.mode === 'team' ? `${names[0]} & ${names[2]}  VS  ${names[1]} & ${names[3]}` : `${names[0]}  VS  ${names[1]}`;
+      void banner(this.ui, vs, 0x2b2118, CAMERA.introHoldMs - 400);
       await wait(this, CAMERA.introHoldMs);
       const me = store.mySeat ?? 0;
       this.director.set(this.director.seatShot(me, this.xOf(me), 1.8));
@@ -183,9 +186,23 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  /** 這場的所有座位 */
+  private seats(): Seat[] {
+    return (store.snapshot?.players ?? [null, null]).map((_, i) => i as Seat);
+  }
+
   /** 角色目前腳底 x */
   private xOf(seat: Seat): number {
-    return this.chars[seat]?.x ?? store.snapshot?.players[seat]?.x ?? ARENA.characterStartX[seat];
+    return this.chars[seat]?.x ?? store.snapshot?.players[seat]?.x ?? startXOf(seat, store.snapshot?.mode);
+  }
+
+  /** 顯示用：輪到的人是誰（「對手」「隊友」或名字） */
+  private who(seat: Seat): string {
+    const snap = store.snapshot;
+    const me = store.mySeat;
+    if (snap?.mode !== 'team') return '對手';
+    const name = snap.players[seat]?.name ?? '';
+    return me !== null && teamOf(me) === teamOf(seat) ? `隊友 ${name}` : name;
   }
 
   private focusSeat(seat: Seat, rate?: number): void {
@@ -193,7 +210,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private focusBoth(): void {
-    this.director.set(this.director.wideShot([this.xOf(0), this.xOf(1)], 3));
+    const alive = this.seats().filter((s) => (store.snapshot?.players[s]?.hp ?? 1) > 0);
+    this.director.set(this.director.wideShot((alive.length ? alive : this.seats()).map((s) => this.xOf(s)), 3));
   }
 
   private cleanup(): void {
@@ -216,18 +234,21 @@ export class BattleScene extends Phaser.Scene {
   // ------------------------------------------------------------ 角色與防禦的畫面同步
 
   private buildCharacters(snap: RoomSnapshot): void {
-    for (const seat of [0, 1] as Seat[]) {
-      const p = snap.players[seat];
-      this.chars[seat] = new CharacterSprite(this, seat, p?.characterId ?? '', p?.x ?? ARENA.characterStartX[seat], p?.name ?? '');
-    }
-    // 重新連線時遊戲已經結束：直接顯示倒地
-    if (snap.status === 'gameOver' && snap.winnerSeat !== null) this.chars[snap.winnerSeat === 0 ? 1 : 0]?.die(false);
+    snap.players.forEach((p, i) => {
+      const seat = i as Seat;
+      this.chars[seat] = new CharacterSprite(this, seat, p?.characterId ?? '', p?.x ?? startXOf(seat, snap.mode), p?.name ?? '');
+      // 重新連線時已經陣亡的人直接躺著
+      if (p && p.hp <= 0) this.chars[seat].die(false);
+    });
+    // 重新連線時遊戲已經結束：輸的那隊直接顯示倒地
+    if (snap.status === 'gameOver' && snap.winnerTeam !== null) this.seats().forEach((s) => teamOf(s) !== snap.winnerTeam && this.chars[s]?.die(false));
   }
 
   /** 依目前階段決定角色常態姿勢：輪到誰瞄準，誰就擺投擲姿勢 */
   private updatePoses(snap: RoomSnapshot): void {
     const t = snap.turn;
-    for (const seat of [0, 1] as Seat[]) {
+    for (const seat of this.seats()) {
+      if (this.chars[seat]?.isDead) continue;
       const aiming = !!t && t.activeSeat === seat && (t.phase === 'aimAngle' || t.phase === 'aimPower');
       this.chars[seat]?.setBase(aiming ? 'throw' : 'idle');
     }
@@ -401,7 +422,7 @@ export class BattleScene extends Phaser.Scene {
           const name = store.snapshot?.players[e.seat]?.name ?? '';
           this.focusSeat(e.seat);
           sfx.play('turnStart');
-          banner(this.ui, e.seat === mySeat ? '輪到你了！' : `輪到 ${name}`, e.seat === 0 ? 0x3d7bd8 : 0xd8463d, 800);
+          banner(this.ui, e.seat === mySeat ? '輪到你了！' : `輪到 ${name}`, teamOf(e.seat) === 0 ? 0x3d7bd8 : 0xd8463d, 800);
           await wait(this, 450);
           for (const d of e.statusDamage) {
             const st = getStatus(d.statusId ?? '');
@@ -472,7 +493,7 @@ export class BattleScene extends Phaser.Scene {
         break;
       case 'functional':
         this.enqueue(async () => {
-          const enemy: Seat = e.seat === 0 ? 1 : 0;
+          const enemy: Seat = e.targetSeat ?? this.seats().find((s) => teamOf(s) !== teamOf(e.seat) && (store.snapshot?.players[s]?.hp ?? 1) > 0) ?? (((e.seat + 1) % 2) as Seat);
           const target = e.targetUid ? this.defenses.get(e.targetUid)?.view : undefined;
           const fx = FUNCTIONAL_EFFECTS[e.handler];
           const selfOnly = e.handler === 'heal' || e.itemId === 'whey';
@@ -506,21 +527,32 @@ export class BattleScene extends Phaser.Scene {
           await banner(this.ui, text, e.reason === 'stunned' ? 0x546e7a : 0x6d5c4b, 1000);
         });
         break;
+      case 'eliminated':
+        this.enqueue(async () => {
+          const p = store.snapshot?.players[e.seat];
+          if (!this.chars[e.seat]?.isDead) this.chars[e.seat]?.die();
+          this.hud.setHp(e.seat, 0);
+          sfx.play('skip');
+          await banner(this.ui, `${p?.name ?? ''} 陣亡！`, teamOf(e.seat) === 0 ? 0x3d7bd8 : 0xd8463d, 900);
+        });
+        break;
       case 'gameOver':
         this.enqueue(async () => {
-          const loser = e.winnerSeat === 0 ? 1 : 0;
           await wait(this, 300); // 讓受傷畫面先閃一下
           this.focusBoth();
-          this.chars[loser]?.die();
-          this.chars[e.winnerSeat]?.celebrate();
-          sfx.play(store.mySeat === loser ? 'lose' : 'win');
+          for (const s of this.seats()) {
+            if (teamOf(s) !== e.winnerTeam) {
+              if (!this.chars[s]?.isDead) this.chars[s]?.die();
+            } else if (!this.chars[s]?.isDead) this.chars[s]?.celebrate();
+          }
+          sfx.play(store.mySeat !== null && teamOf(store.mySeat) !== e.winnerTeam ? 'lose' : 'win');
           await wait(this, 900);
         });
         break;
     }
   }
 
-  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean; survived?: boolean; shielded?: number; label?: string; self?: boolean }[]): void {
+  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean; survived?: boolean; shielded?: number; label?: string; self?: boolean; ally?: boolean }[]): void {
     for (const d of damages) {
       if (d.source === 'crush') {
         sfx.play('crush');
@@ -540,6 +572,7 @@ export class BattleScene extends Phaser.Scene {
       } else if (d.source === 'status') sfx.play('oof', { vol: 0.5, rate: 1.1 });
       const critTag = d.crit ? '爆擊！' : '';
       if (d.self) floatingText(this, this.xOf(d.seat), ARENA.groundY - 300, '打到自己！', '#ff8a80');
+      if (d.ally) floatingText(this, this.xOf(d.seat), ARENA.groundY - 300, '打到隊友！', '#ff8a80');
       damageNumber(
         this,
         this.xOf(d.seat),
@@ -912,6 +945,7 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
     // 先收起所有互動元件，再依階段打開
+    this.enemyChoices = [];
     this.placement.hide();
     this.target.hide();
     if (!t || !['aimAngle', 'aimPower'].includes(t.phase)) {
@@ -933,7 +967,7 @@ export class BattleScene extends Phaser.Scene {
     switch (t.phase) {
       case 'draw':
         this.cards.hide();
-        this.slot.spin(mine ? (this.touch ? '點右下角按鈕停止！' : '按空白鍵（或右下角按鈕）停止！') : '對手正在抽取道具…');
+        this.slot.spin(mine ? (this.touch ? '點右下角按鈕停止！' : '按空白鍵（或右下角按鈕）停止！') : `${this.who(t.activeSeat)} 正在抽取道具…`);
         if (mine) this.setAction('停止');
         break;
       case 'choose': {
@@ -959,7 +993,7 @@ export class BattleScene extends Phaser.Scene {
             ? this.touch
               ? '手指按住並拖曳瞄準，放開就投出（按越久越大力）'
               : '移動滑鼠瞄準，按住左鍵或空白鍵蓄力，放開投出'
-            : '對手正在瞄準…',
+            : `${this.who(t.activeSeat)} 正在瞄準…`,
         );
         break;
       case 'place': {
@@ -984,14 +1018,34 @@ export class BattleScene extends Phaser.Scene {
         this.cards.hide();
         const item = getItem(t.chosenItemId ?? '');
         if (item?.kind !== 'functional') break;
+        const enemies = this.seats().filter((s) => teamOf(s) !== teamOf(t.activeSeat) && (snap.players[s]?.hp ?? 0) > 0);
         if (item.targeting === 'enemyDefense') {
-          const targets = snap.defenses.filter((d) => d.owner !== t.activeSeat);
-          this.target.show(mine ? `點選要摧毀的敵方防禦道具` : `對手正在選擇目標…`, targets, mine, (uid) =>
+          const targets = snap.defenses.filter((d) => teamOf(d.owner) !== teamOf(t.activeSeat));
+          this.target.show(mine ? `點選要摧毀的敵方防禦道具` : `${this.who(t.activeSeat)} 正在選擇目標…`, targets, mine, (uid) =>
             this.send('turn:functional', { turnId: t.turnId, targetUid: uid }),
+          );
+        } else if (snap.mode === 'team' && itemTargetsEnemy(item) && enemies.length > 1) {
+          // 2v2：先選要對哪個敵人發動（點角色，或按 1 / 2）
+          this.enemyChoices = enemies;
+          // 框大一點，遠景時也點得到
+          const rects = enemies.map((s) => {
+            const r = characterHitbox(this.xOf(s), this.scaleOf(s));
+            return { uid: String(s), rect: { x: r.x - 45, y: r.y - 60, w: r.w + 90, h: r.h + 70 } };
+          });
+          const names = `${snap.players[enemies[0]]?.name}、${snap.players[enemies[1]]?.name}`;
+          this.target.show(
+            mine
+              ? this.touch
+                ? `點選要對誰發動「${item.name}」（${names}）`
+                : `點選要對誰發動「${item.name}」（1：${snap.players[enemies[0]]?.name}　2：${snap.players[enemies[1]]?.name}）`
+              : `${this.who(t.activeSeat)} 正在選擇「${item.name}」的目標…`,
+            rects,
+            mine,
+            (uid) => this.send('turn:functional', { turnId: t.turnId, targetSeat: Number(uid) }),
           );
         } else {
           this.target.show(
-            mine ? (this.touch ? `點右下角按鈕發動「${item.name}」` : `按空白鍵（或右下角按鈕）發動「${item.name}」`) : `對手即將發動「${item.name}」`,
+            mine ? (this.touch ? `點右下角按鈕發動「${item.name}」` : `按空白鍵（或右下角按鈕）發動「${item.name}」`) : `${this.who(t.activeSeat)} 即將發動「${item.name}」`,
             [],
             false,
             () => {},
@@ -1051,12 +1105,16 @@ export class BattleScene extends Phaser.Scene {
     const snap = store.snapshot;
     if (!snap) return;
     const me = store.mySeat;
-    for (const seat of [0, 1] as Seat[]) {
+    for (const seat of this.seats()) {
       const c = this.chars[seat];
       if (!c) continue;
       const s = this.toScreen(c.x, c.headY + 40);
       const dist = me !== null && me !== seat ? Math.abs(c.x - this.xOf(me)) : null;
-      this.markers.update(seat, s.x, s.y, snap.players[seat]?.name ?? '', dist);
+      if (c.isDead && snap.mode === 'team') {
+        this.markers.hide(seat);
+        continue;
+      }
+      this.markers.update(seat, s.x, s.y, snap.players[seat]?.name ?? '', dist, seat >= 2 ? 72 : 0);
     }
   }
 
@@ -1080,7 +1138,7 @@ export class BattleScene extends Phaser.Scene {
     const seat = store.mySeat;
     if (seat === null) return;
     const lp = launchPoint(seat, this.xOf(seat), this.scaleOf(seat));
-    const dir = seat === 0 ? 1 : -1;
+    const dir = sideDir(seat);
     const dx = (x - lp.x) * dir,
       dy = lp.y - y;
     if (Math.hypot(dx, dy) < 12) return; // 太靠近出手點時角度會亂跳
@@ -1117,14 +1175,24 @@ export class BattleScene extends Phaser.Scene {
         break;
       case 'target': {
         const item = getItem(t.chosenItemId ?? '');
-        if (item?.kind === 'functional' && item.targeting === 'none') this.send('turn:functional', { turnId: t.turnId });
+        // 2v2 要先選目標的道具不能直接發動
+        const needPick = store.snapshot?.mode === 'team' && itemTargetsEnemy(item) && this.enemyChoices.length > 1;
+        if (item?.kind === 'functional' && item.targeting === 'none' && !needPick) this.send('turn:functional', { turnId: t.turnId });
         break;
       }
     }
   }
 
+  /** 2v2 選目標時可以選的敵人（按 1 / 2） */
+  private enemyChoices: Seat[] = [];
+
   private pickByIndex(i: number): void {
     const t = store.snapshot?.turn;
+    if (t && t.phase === 'target' && t.activeSeat === store.mySeat && store.snapshot?.mode === 'team') {
+      const item = getItem(t.chosenItemId ?? '');
+      if (itemTargetsEnemy(item) && this.enemyChoices[i] !== undefined) this.send('turn:functional', { turnId: t.turnId, targetSeat: this.enemyChoices[i] });
+      return;
+    }
     if (!t || t.phase !== 'choose' || t.activeSeat !== store.mySeat || !t.options?.[i]) return;
     this.send('turn:choose', { turnId: t.turnId, itemId: t.options[i] });
   }

@@ -12,23 +12,25 @@ import Matter from 'matter-js';
 import { ARENA, DEFENSE_HIT, KNOCKBACK, PHYSICS } from '../../shared/config/game.js';
 import type { DefenseDef, ThrowableDef } from '../../shared/config/items.js';
 import { launchPoint } from '../../shared/physics.js';
-import type { ImpactKind, PhysicsFrames, Seat } from '../../shared/types.js';
+import { sideDir, teamOf, type ImpactKind, type PhysicsFrames, type Seat } from '../../shared/types.js';
+import { xRangeOf } from '../../shared/physics.js';
 
 const { Engine, Bodies, Body, Bounds, Composite, Events, Query, Sleeping } = Matter;
 
-// 碰撞分類（bit）：讓投擲物不會撞到「自己」的角色與防禦道具
+// 碰撞分類（bit）：讓投擲物不會撞到「自己隊伍」的防禦道具、出手瞬間不會撞到自己
 const CAT = {
   world: 0x0001,
-  char0: 0x0002,
-  char1: 0x0004,
-  def0: 0x0008,
-  def1: 0x0010,
   proj: 0x0020,
   /** 被打飛、翻滾中的角色 */
   tumble: 0x0040,
   /** 只擋翻滾角色的隱形邊界 */
   bound: 0x0080,
 } as const;
+/** 角色（座位 0~3）：0x0100、0x0200、0x0400、0x0800 */
+const charCat = (seat: number) => 0x0100 << seat;
+/** 防禦道具（依隊伍）：0x0002、0x0004 */
+const defCat = (team: number) => 0x0002 << team;
+const ALL_CHARS = 0x0f00;
 
 /** 翻滾身體：寬 × 高（膠囊形，圓角讓它會滾） */
 const TUMBLE = { w: 44, h: 150, r: 20 };
@@ -140,15 +142,19 @@ export class PhysicsWorld {
   private defs = new Map<string, DefenseBodyInfo>();
 
   private chars: any[] = [];
-  /** 角色腳底 x */
-  private charX: [number, number];
+  /** 角色腳底 x（依座位） */
+  private charX: number[];
 
   /** 角色身體大小倍率（連恩 2/3） */
-  private readonly cs: [number, number];
+  private readonly cs: number[];
+  /** 陣亡、已經從場上移除的角色（2v2） */
+  private gone: boolean[];
 
-  constructor(startX: [number, number] = [ARENA.characterStartX[0], ARENA.characterStartX[1]], charScale: [number, number] = [1, 1]) {
-    this.charX = [...startX] as [number, number];
-    this.cs = [...charScale] as [number, number];
+  constructor(startX: number[] = [ARENA.characterStartX[0], ARENA.characterStartX[1]], charScale: number[] = startX.map(() => 1)) {
+    this.charX = [...startX];
+    this.cs = [...charScale];
+    this.gone = startX.map(() => false);
+    this.extraLie = startX.map(() => 0);
     this.engine = Engine.create({
       gravity: { x: 0, y: 1, scale: ARENA.gravity / 1e6 },
       enableSleeping: true,
@@ -171,7 +177,7 @@ export class PhysicsWorld {
         Bodies.rectangle(bx, G - 1500, 40, 3000, { isStatic: true, label: 'bound', friction: 0.1, restitution: 0, collisionFilter: { category: CAT.bound, mask: CAT.tumble } }),
       ),
     ];
-    for (const seat of [0, 1] as Seat[]) {
+    for (const seat of this.seats()) {
       const x = this.charX[seat];
       const cb = ARENA.characterBody;
       const s = this.cs[seat];
@@ -182,7 +188,7 @@ export class PhysicsWorld {
         isStatic: true,
         label: `char${seat}`,
         friction: 0.9,
-        collisionFilter: { category: seat === 0 ? CAT.char0 : CAT.char1, mask: 0xffff & ~CAT.bound },
+        collisionFilter: { category: charCat(seat), mask: 0xffff & ~CAT.bound },
       });
       this.chars[seat] = body;
       statics.push(body);
@@ -195,8 +201,9 @@ export class PhysicsWorld {
    * 給 AI 試算投擲用，不會影響真正的戰場。
    */
   clone(): PhysicsWorld {
-    const w = new PhysicsWorld([this.charX[0], this.charX[1]], this.cs);
-    w.extraLie = [...this.extraLie] as [number, number];
+    const w = new PhysicsWorld(this.charX, this.cs);
+    w.extraLie = [...this.extraLie];
+    for (const s of this.seats()) if (this.gone[s]) w.removeChar(s);
     for (const [uid, info] of this.defs) {
       w.addDefense(uid, info.def, info.owner, info.body.position.x + info.offset.x, info.body.position.y + info.offset.y);
       const nb = w.defs.get(uid)!.body;
@@ -207,8 +214,25 @@ export class PhysicsWorld {
     return w;
   }
 
+  /** 所有座位 */
+  seats(): Seat[] {
+    return this.charX.map((_, i) => i as Seat);
+  }
+
+  /** 陣亡的角色從物理世界移除（之後東西不會撞到他） */
+  removeChar(seat: Seat): void {
+    if (this.gone[seat]) return;
+    this.gone[seat] = true;
+    Composite.remove(this.engine.world, this.chars[seat]);
+    this.wakeDefenses();
+  }
+
+  isGone(seat: Seat): boolean {
+    return this.gone[seat];
+  }
+
   /** 倒地後多躺幾毫秒（竹竿睡覺） */
-  private extraLie: [number, number] = [0, 0];
+  private extraLie: number[];
   setExtraLie(seat: Seat, ms: number): void {
     this.extraLie[seat] = ms;
   }
@@ -238,7 +262,7 @@ export class PhysicsWorld {
       // 穿戴型維持比較穩的舊物理（空氣阻力大一點，戴在頭上不容易晃掉）
       frictionAir: def.wearable ? 0.01 : PHYSICS.defense.frictionAir,
       density: def.density ?? PHYSICS.defense.density,
-      collisionFilter: { category: owner === 0 ? CAT.def0 : CAT.def1, mask: 0xffff },
+      collisionFilter: { category: defCat(teamOf(owner)), mask: 0xffff },
     };
     let body: any;
     if (def.body?.kind === 'helmet') {
@@ -341,12 +365,13 @@ export class PhysicsWorld {
       restitution: KNOCKBACK.restitution,
       density: KNOCKBACK.density,
       frictionAir: 0.004,
-      collisionFilter: { category: CAT.tumble, mask: CAT.world | CAT.bound | (seat === 0 ? CAT.char1 : CAT.char0) },
+      // 被打飛的人會撞到敵隊的人（不會撞到隊友，免得卡在隊友身上）
+      collisionFilter: { category: CAT.tumble, mask: CAT.world | CAT.bound | this.enemyChars(seat) },
     });
     if (req.leap) {
       // 跳躍：不會轉，撞得到其他人（落在別人身上）
       Body.setInertia(body, Infinity);
-      body.collisionFilter.mask = CAT.world | CAT.bound | (seat === 0 ? CAT.char1 : CAT.char0);
+      body.collisionFilter.mask = CAT.world | CAT.bound | (ALL_CHARS & ~charCat(seat));
     }
     Body.setVelocity(body, { x: req.vx / 60, y: req.vy / 60 });
     Body.setAngularVelocity(body, req.omega / 60);
@@ -357,8 +382,8 @@ export class PhysicsWorld {
       phase: 'tumble',
       t: 0,
       restSteps: 0,
-      away: req.away ?? (seat === 0 ? -1 : 1),
-      rev: !req.leap && (req.away ?? (seat === 0 ? -1 : 1)) !== (seat === 0 ? -1 : 1),
+      away: req.away ?? -sideDir(seat),
+      rev: !req.leap && (req.away ?? -sideDir(seat)) !== -sideDir(seat),
       leap: !!req.leap,
       speed: req.speed,
       com: { x, y: G - ts.h / 2 },
@@ -377,6 +402,13 @@ export class PhysicsWorld {
     frames.c ??= {};
     frames.c[String(seat) as '0' | '1'] = k.frames;
     return k;
+  }
+
+  /** 敵隊所有角色的碰撞分類 */
+  private enemyChars(seat: Seat): number {
+    let m = 0;
+    for (const s of this.seats()) if (teamOf(s) !== teamOf(seat)) m |= charCat(s);
+    return m;
   }
 
   /** 翻滾身體大小（矮的角色比較小） */
@@ -433,7 +465,7 @@ export class PhysicsWorld {
 
   private stepKnockInner(k: KnockState, dt: number): void {
     k.t += dt;
-    const range = ARENA.characterXRange[k.seat];
+    const range = xRangeOf(k.seat);
     if (k.leap) {
       const b = k.body;
       // 快到可移動範圍的邊緣就煞車（跟被打飛一樣）
@@ -721,9 +753,9 @@ export class PhysicsWorld {
     // 被打壞、還在倒的防禦道具（全部靜止後才移除）
     const dying = new Set<string>();
     // 一開始就戴在頭上/靠在身上的道具：晃動碰到不算「壓到」
-    const wornBy: [Set<string>, Set<string>] = [new Set(), new Set()];
+    const wornBy: Set<string>[] = this.seats().map(() => new Set<string>());
     for (const [uid, info] of this.defs) {
-      for (const s of [0, 1] as Seat[]) {
+      for (const s of this.seats()) {
         const p = info.body.position;
         // 穿戴型道具（鋼盔）永遠不算壓到人
         if (info.wearable || (Math.abs(p.x - this.charX[s]) < 60 && p.y < G - 60 * this.cs[s])) wornBy[s].add(uid);
@@ -734,7 +766,7 @@ export class PhysicsWorld {
     for (const [uid, info] of this.defs) startAngle.set(uid, info.body.angle);
     const crushed = new Set<string>();
     const last = this.snapshotPoses();
-    const dir = seat === 0 ? 1 : -1;
+    const dir = sideDir(seat);
     const lp = launchPoint(seat, this.charX[seat], this.cs[seat]);
     const p = Math.min(1, Math.max(0, power));
     const speed = item.minSpeed + (item.maxSpeed - item.minSpeed) * p; // px/s
@@ -750,10 +782,11 @@ export class PhysicsWorld {
         category: CAT.proj,
         // 一開始只撞得到對手（出手點在自己身上）；離開自己的身體後才會打到自己。
         // 自己的防禦道具永遠撞不到。
-        mask: CAT.world | (seat === 0 ? CAT.char1 | CAT.def1 : CAT.char0 | CAT.def0),
+        // 隊友也打得到；同隊的防禦道具碰不到
+        mask: CAT.world | (ALL_CHARS & ~charCat(seat)) | defCat(1 - teamOf(seat)),
       },
     });
-    const selfCat = seat === 0 ? CAT.char0 : CAT.char1;
+    const selfCat = charCat(seat);
     let selfArmed = false;
     Body.setVelocity(proj, { x: (Math.cos(rad) * speed * dir) / 60, y: (-Math.sin(rad) * speed) / 60 });
     Body.setAngularVelocity(proj, (item.spin ?? 0.25) * dir);
@@ -770,7 +803,7 @@ export class PhysicsWorld {
         const la: string = a.label ?? '',
           lb: string = b.label ?? '';
         const defB = la.startsWith('def:') ? a : lb.startsWith('def:') ? b : null;
-        const charB = /^char[01]$/.test(la) ? a : /^char[01]$/.test(lb) ? b : null;
+        const charB = /^char\d$/.test(la) ? a : /^char\d$/.test(lb) ? b : null;
         if (impact && defB && charB) {
           const uid = (defB.label as string).slice(4);
           const s = Number((charB.label as string).slice(4)) as Seat;
@@ -828,7 +861,7 @@ export class PhysicsWorld {
     let lastVel = { x: 0, y: 0 };
     let knock: KnockState | null = null;
     try {
-      const extraSteps = Math.ceil(Math.max(this.extraLie[0], this.extraLie[1]) / STEP_MS);
+      const extraSteps = Math.ceil(Math.max(...this.extraLie) / STEP_MS);
       while (step < maxFlight + afterSteps + settleSteps + extraSteps) {
         if (!projGone && extraG !== 0) Body.applyForce(proj, proj.position, { x: 0, y: proj.mass * extraG });
         // 投擲物完全離開自己的身體後，才開放打到自己
@@ -901,7 +934,7 @@ export class PhysicsWorld {
     if (knock && !knock.done) {
       // 安全措施：時間到還沒結束就直接站好（或趴著）
       if (knock.phase === 'tumble') {
-        const range = ARENA.characterXRange[knock.seat];
+        const range = xRangeOf(knock.seat);
         knock.endX = Math.min(range[1], Math.max(range[0], knock.body.position.x));
         Composite.remove(this.engine.world, knock.body);
       }
@@ -944,7 +977,7 @@ export class PhysicsWorld {
   } {
     const frames = this.newFrames();
     const last = this.snapshotPoses();
-    const dir = seat === 0 ? 1 : -1;
+    const dir = sideDir(seat);
     const p = Math.min(1, Math.max(0, power));
     const speed = item.minSpeed + (item.maxSpeed - item.minSpeed) * p;
     const rad = (angleDeg * Math.PI) / 180;
@@ -999,7 +1032,7 @@ export class PhysicsWorld {
     for (const k of knocks) {
       if (k.done) continue;
       if (k.body && Composite.get(this.engine.world, k.body.id, 'body')) Composite.remove(this.engine.world, k.body);
-      const range = ARENA.characterXRange[k.seat];
+      const range = xRangeOf(k.seat);
       k.endX = Math.min(range[1], Math.max(range[0], k.body?.position.x ?? k.endX));
       this.moveCharHidden(k.seat, k.endX);
       if (!k.stayDown) this.hideChar(k.seat, false);

@@ -7,13 +7,14 @@
 //   3. （選擇性）在 client/src/scenes/battle/effects.ts 加對應的動畫，沒加會用預設閃光
 // ============================================================
 
-import type { FunctionalDef } from '../../../shared/config/items.js';
-import type { DamageEntry, DefenseUpdate, ErrorCode, HealEntry, Seat } from '../../../shared/types.js';
+import { itemTargetsEnemy, type FunctionalDef } from '../../../shared/config/items.js';
+import { teamOf, type DamageEntry, type DefenseUpdate, type ErrorCode, type HealEntry, type Seat } from '../../../shared/types.js';
 import type { BattleState } from '../BattleState.js';
 
 export interface FunctionalContext {
   state: BattleState;
   seat: Seat;
+  /** 這次對哪個敵人發動（2v2 由玩家選） */
   enemy: Seat;
   item: FunctionalDef;
   targetUid?: string;
@@ -27,6 +28,8 @@ export interface FunctionalResult {
 }
 
 export interface FunctionalHandler {
+  /** 會作用在「一個敵人」身上（2v2 時要先選目標） */
+  targetsEnemy?(item: FunctionalDef): boolean;
   /** 這個道具現在能不能被抽到（例如沒有敵方防禦時，拆除錘就不出現） */
   canDraw?(state: BattleState, seat: Seat, item: FunctionalDef): boolean;
   /** 發動前檢查（目標是否合法） */
@@ -37,6 +40,7 @@ export interface FunctionalHandler {
 const handlers: Record<string, FunctionalHandler> = {
   /** 直接傷害，無視防禦。params.damage */
   directDamage: {
+    targetsEnemy: (item) => itemTargetsEnemy(item),
     execute({ state, seat, enemy, item }) {
       const d = state.dealDamage(enemy, Number(item.params.damage ?? 10), 'functional', seat);
       return { damages: d ? [d] : [], defenseUpdates: [] };
@@ -45,6 +49,7 @@ const handlers: Record<string, FunctionalHandler> = {
 
   /** 自己和對手都受到傷害。params.damage */
   damageBoth: {
+    targetsEnemy: (item) => itemTargetsEnemy(item),
     execute({ state, seat, enemy, item }) {
       const amount = Number(item.params.damage ?? 50);
       // 自己那一下不套用自己的增傷（乳清）
@@ -60,6 +65,7 @@ const handlers: Record<string, FunctionalHandler> = {
 
   /** 附加狀態。params.statusId、params.turns、params.target = 'enemy' | 'self' */
   applyStatus: {
+    targetsEnemy: (item) => itemTargetsEnemy(item),
     execute({ state, seat, enemy, item }) {
       const target: Seat = item.params.target === 'self' ? seat : enemy;
       const statusId = String(item.params.statusId);
@@ -92,12 +98,12 @@ const handlers: Record<string, FunctionalHandler> = {
   /** 摧毀指定的敵方防禦道具 */
   destroyDefense: {
     canDraw(state, seat) {
-      return state.defenses.some((d) => d.owner !== seat);
+      return state.defenses.some((d) => teamOf(d.owner) !== teamOf(seat));
     },
-    validate({ state, enemy, targetUid }) {
+    validate({ state, seat, targetUid }) {
       if (!targetUid) return 'INVALID_INPUT';
       const d = state.getDefense(targetUid);
-      if (!d || d.owner !== enemy) return 'INVALID_INPUT';
+      if (!d || teamOf(d.owner) === teamOf(seat)) return 'INVALID_INPUT';
       return null;
     },
     execute({ state, targetUid }) {

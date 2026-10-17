@@ -101,7 +101,7 @@ export class OffscreenMarkers {
   private items: { root: Phaser.GameObjects.Container; arrow: Phaser.GameObjects.Triangle; label: Phaser.GameObjects.Text }[] = [];
 
   constructor(scene: Phaser.Scene) {
-    for (const color of [0x3d7bd8, 0xd8463d]) {
+    for (const color of [0x3d7bd8, 0xd8463d, 0x5aa0f0, 0xf07a5a]) {
       const root = scene.add.container(0, 0).setDepth(6).setVisible(false);
       const arrow = scene.add.triangle(0, 0, 0, -16, 26, 0, 0, 16, color).setStrokeStyle(3, 0x2b2118);
       const label = scene.add
@@ -112,8 +112,12 @@ export class OffscreenMarkers {
     }
   }
 
+  hide(i: number): void {
+    this.items[i]?.root.setVisible(false);
+  }
+
   /** screen：角色在螢幕上的位置；dist：和自己的距離（null = 不顯示距離） */
-  update(i: number, screenX: number, screenY: number, name: string, dist: number | null): void {
+  update(i: number, screenX: number, screenY: number, name: string, dist: number | null, yOffset = 0): void {
     const m = this.items[i];
     const W = ARENA.width,
       H = ARENA.height;
@@ -122,7 +126,8 @@ export class OffscreenMarkers {
     m.root.setVisible(off);
     if (!off) return;
     const x = Phaser.Math.Clamp(screenX, margin, W - margin);
-    const y = Phaser.Math.Clamp(screenY, 170, H - 70);
+    // 2v2 同一邊兩個人：後排的往下錯開，標籤才不會疊在一起
+    const y = Phaser.Math.Clamp(screenY, 170, H - 70 - yOffset) + yOffset;
     const ang = Math.atan2(screenY - y, screenX - x);
     m.root.setPosition(x, y);
     m.arrow.setRotation(ang);

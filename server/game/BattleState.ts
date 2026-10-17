@@ -4,7 +4,8 @@
 import { ARENA } from '../../shared/config/game.js';
 import { bodyScaleOf, traitsOf, type CharacterTraits } from '../../shared/config/characters.js';
 import { getItem, getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
-import type { DamageEntry, DefenseUpdate, DefenseView, HealEntry, Seat, StatusView, StuckItem } from '../../shared/types.js';
+import { seatsOf, sideDir, teamOf, type DamageEntry, type DefenseUpdate, type DefenseView, type GameMode, type HealEntry, type Seat, type StatusView, type StuckItem, type Team } from '../../shared/types.js';
+import { startXOf } from '../../shared/physics.js';
 import { PhysicsWorld } from './PhysicsWorld.js';
 
 export interface FighterState {
@@ -32,24 +33,43 @@ export interface DefenseState extends DefenseView {
 }
 
 export class BattleState {
-  fighters: [FighterState, FighterState];
+  fighters: FighterState[];
   defenses: DefenseState[] = [];
   /** 防禦道具的真實物理（位置、角度、堆疊） */
   readonly physics: PhysicsWorld;
   private uidCounter = 0;
 
-  /** 雙方的角色 id（決定被動技能） */
-  readonly characterIds: [string | null, string | null];
+  /** 每個座位的角色 id（決定被動技能） */
+  readonly characterIds: (string | null)[];
+  readonly mode: GameMode;
+  readonly seats: Seat[];
 
-  constructor(maxHp: [number, number], characterIds: [string | null, string | null] = [null, null]) {
+  constructor(maxHp: number[], characterIds: (string | null)[] = maxHp.map(() => null), mode: GameMode = maxHp.length > 2 ? 'team' : 'duel') {
+    this.mode = mode;
+    this.seats = seatsOf(mode);
     this.characterIds = characterIds;
-    this.physics = new PhysicsWorld(undefined, [bodyScaleOf(characterIds[0]), bodyScaleOf(characterIds[1])]);
+    this.physics = new PhysicsWorld(
+      this.seats.map((s) => startXOf(s, mode)),
+      this.seats.map((s) => bodyScaleOf(characterIds[s] ?? null)),
+    );
     // 竹竿倒地後多睡一下
-    for (const s of [0, 1] as Seat[]) this.physics.setExtraLie(s, traitsOf(characterIds[s]).extraLieMs ?? 0);
-    this.fighters = [
-      { seat: 0, hp: maxHp[0], maxHp: maxHp[0], statuses: [], x: ARENA.characterStartX[0], stuck: [] },
-      { seat: 1, hp: maxHp[1], maxHp: maxHp[1], statuses: [], x: ARENA.characterStartX[1], stuck: [] },
-    ];
+    for (const s of this.seats) this.physics.setExtraLie(s, traitsOf(characterIds[s] ?? null).extraLieMs ?? 0);
+    this.fighters = this.seats.map((seat) => ({ seat, hp: maxHp[seat], maxHp: maxHp[seat], statuses: [], x: startXOf(seat, mode), stuck: [] }));
+  }
+
+  /** 敵隊的座位 */
+  enemiesOf(seat: Seat): Seat[] {
+    return this.seats.filter((s) => teamOf(s) !== teamOf(seat));
+  }
+
+  /** 還活著的敵人 */
+  aliveEnemiesOf(seat: Seat): Seat[] {
+    return this.enemiesOf(seat).filter((s) => this.fighters[s].hp > 0);
+  }
+
+  /** 隊伍是否全滅 */
+  teamDead(team: Team): boolean {
+    return this.seats.filter((s) => teamOf(s) === team).every((s) => this.fighters[s].hp <= 0);
   }
 
   nextUid(prefix: string): string {
@@ -79,7 +99,7 @@ export class BattleState {
   }
 
   traits(seat: Seat): CharacterTraits {
-    return traitsOf(this.characterIds[seat]);
+    return traitsOf(this.characterIds[seat] ?? null);
   }
 
   /** 某玩家目前所有狀態的倍率相乘 */
@@ -156,7 +176,7 @@ export class BattleState {
    * 跟已經黏著的便便重疊 → 黏在那坨上面（往外疊出去）。
    */
   stick(seat: Seat, itemId: string, impactX: number, impactY: number, feetX: number, scale = 1): StuckItem {
-    const facing = seat === 0 ? 1 : -1;
+    const facing = sideDir(seat);
     const bs = this.physics.getCharScale(seat);
     const R = 12 * scale; // 黏著時的半徑（畫面上約 28px 大；連恩丟的大 2.5 倍）
     let x = Math.max(-22 * bs, Math.min(22 * bs, (impactX - feetX) * facing));

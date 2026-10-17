@@ -5,7 +5,7 @@
 import * as Phaser from 'phaser';
 import { getCharacter, type Pose } from '../../../../shared/config/characters.js';
 import { ARENA } from '../../../../shared/config/game.js';
-import type { Seat, StuckItem } from '../../../../shared/types.js';
+import { sideDir, type Seat, type StuckItem } from '../../../../shared/types.js';
 import { iconKey, knockKey, poseTexture } from '../../game/assets.js';
 import { FONT } from './effects.js';
 
@@ -17,7 +17,7 @@ const POSE_SIZE: Record<Pose, { h?: number; w?: number }> = {
   dead: { w: 1.05 },
 };
 
-const SEAT_COLOR = ['#3d7bd8', '#d8463d'];
+const SEAT_COLOR = ['#3d7bd8', '#d8463d', '#5aa0f0', '#f07a5a'];
 
 /**
  * 被打飛的 5 張動作圖裡，身體從「腳」到「頭頂」的位置（圖片的比例座標，圖是往左倒的方向）。
@@ -64,7 +64,7 @@ export class CharacterSprite {
     this.shadow = scene.add.ellipse(0, 2, (90 * this.standHeight) / 150, 16, 0x000000, 0.25);
     // body 負責「被擊退時的傾斜/彈起」，以腳底為軸心
     this.body = scene.add.container(0, 0);
-    this.img = scene.add.image(0, 0, poseTexture(scene, charId, 'idle').key).setOrigin(0.5, 1).setFlipX(seat === 1);
+    this.img = scene.add.image(0, 0, poseTexture(scene, charId, 'idle').key).setOrigin(0.5, 1).setFlipX(sideDir(seat) < 0);
     this.stuckLayer = scene.add.container(0, 0);
     this.body.add([this.img, this.stuckLayer]);
     this.tag = scene.add
@@ -129,7 +129,7 @@ export class CharacterSprite {
   /** 把站姿座標換算到目前的圖上（站著 / 被打飛的動作圖） */
   private layoutStuck(): void {
     if (this.stuck.length === 0) return;
-    const facing = this.seat === 0 ? 1 : -1;
+    const facing = sideDir(this.seat);
     const H = this.standHeight;
     // 腳 F → 頭頂 T 的身體軸線（body 容器座標）
     let F = { x: 0, y: 0 },

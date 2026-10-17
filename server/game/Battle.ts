@@ -13,7 +13,7 @@
 
 import { AIM_CONFIG, GAME_CONFIG } from '../../shared/config/game.js';
 import { getItem, type ItemDef } from '../../shared/config/items.js';
-import type { BattleEvent, ErrorCode, Seat, TurnPhase, TurnView } from '../../shared/types.js';
+import { teamOf, type BattleEvent, type ErrorCode, type GameMode, type Seat, type Team, type TurnPhase, type TurnView } from '../../shared/types.js';
 import { BattleState } from './BattleState.js';
 import { resolveThrow, throwDurationMs } from './Combat.js';
 import { canPlaceMore, createDefense, validatePlacement } from './DefenseSystem.js';
@@ -26,7 +26,7 @@ export interface BattleHooks {
   onChange(): void;
   /** 動畫用事件 */
   onEvent(e: BattleEvent): void;
-  onGameOver(winner: Seat, reason: 'hp' | 'forfeit'): void;
+  onGameOver(winnerTeam: Team, reason: 'hp' | 'forfeit'): void;
 }
 
 export class Battle {
@@ -42,14 +42,21 @@ export class Battle {
   private readonly useTimer = new PhaseTimer();
   private readonly pending = new Set<NodeJS.Timeout>();
   private finished = false;
+  /** 已經宣告陣亡的座位（2v2） */
+  private eliminated = new Set<Seat>();
 
   constructor(
-    maxHp: [number, number],
+    maxHp: number[],
     private readonly hooks: BattleHooks,
     private readonly rng: Rng = Math.random,
-    characterIds: [string | null, string | null] = [null, null],
+    characterIds: (string | null)[] = maxHp.map(() => null),
+    mode?: GameMode,
   ) {
-    this.state = new BattleState(maxHp, characterIds);
+    this.state = new BattleState(maxHp, characterIds, mode);
+  }
+
+  get mode(): GameMode {
+    return this.state.mode;
   }
 
   // ------------------------------------------------------------ 生命週期
@@ -70,10 +77,18 @@ export class Battle {
     return this.finished;
   }
 
-  /** 斷線太久判負 */
+  /** 斷線太久判負（2v2：這個人陣亡，隊友還活著就繼續打） */
   forfeit(loser: Seat): void {
     if (this.finished) return;
-    this.endGame(loser === 0 ? 1 : 0, 'forfeit');
+    const team = teamOf(loser);
+    if (this.mode === 'duel' || this.state.seats.filter((s) => teamOf(s) === team && s !== loser).every((s) => this.state.fighters[s].hp <= 0)) {
+      this.endGame((1 - team) as Team, 'forfeit');
+      return;
+    }
+    this.state.fighters[loser].hp = 0;
+    this.markDead();
+    if (this.activeSeat === loser && this.phase !== 'resolving' && this.phase !== 'turnStart') this.skip('useTimeout');
+    else this.hooks.onChange();
   }
 
   turnView(): TurnView {
@@ -195,14 +210,22 @@ export class Battle {
     return null;
   }
 
-  useFunctional(seat: Seat, turnId: number, targetUid?: string): ErrorCode | null {
+  useFunctional(seat: Seat, turnId: number, targetUid?: string, targetSeat?: Seat): ErrorCode | null {
     const err = this.guard(seat, turnId, ['target']);
     if (err) return err;
     const item = getItem(this.chosenItemId ?? '');
     if (!item || item.kind !== 'functional') return 'WRONG_PHASE';
     const handler = getHandler(item.handler);
     if (!handler) return 'INVALID_INPUT';
-    const ctx = { state: this.state, seat, enemy: (seat === 0 ? 1 : 0) as Seat, item, targetUid };
+    // 要對哪個敵人發動：2v2 兩個敵人都活著時由玩家指定
+    const alive = this.state.aliveEnemiesOf(seat);
+    const needsTarget = !!handler.targetsEnemy?.(item);
+    let enemy: Seat = alive[0] ?? this.state.enemiesOf(seat)[0];
+    if (needsTarget && alive.length > 1) {
+      if (targetSeat === undefined || !alive.includes(targetSeat)) return 'INVALID_INPUT';
+      enemy = targetSeat;
+    } else if (targetSeat !== undefined && alive.includes(targetSeat)) enemy = targetSeat;
+    const ctx = { state: this.state, seat, enemy, item, targetUid };
     const vErr = handler.validate?.(ctx) ?? null;
     if (vErr) return vErr;
 
@@ -215,6 +238,7 @@ export class Battle {
       itemId: item.id,
       handler: item.handler,
       targetUid,
+      ...(needsTarget ? { targetSeat: enemy } : {}),
       damages: result.damages,
       heals: result.heals ?? [],
       defenseUpdates: result.defenseUpdates,
@@ -246,7 +270,7 @@ export class Battle {
     // 角色專屬卡牌
     if (item.exclusiveTo && !item.exclusiveTo.includes(this.state.characterIds[seat] ?? '')) return false;
     // 對上某些角色時抽不到（鄭霖澤的「連恩」遇到連恩本人）
-    if (item.notVs?.includes(this.state.characterIds[seat === 0 ? 1 : 0] ?? '')) return false;
+    if (this.state.enemiesOf(seat).some((e) => item.notVs?.includes(this.state.characterIds[e] ?? ''))) return false;
     if (item.kind === 'defense') return canPlaceMore(this.state, seat, item);
     if (item.kind === 'functional') {
       const h = getHandler(item.handler);
@@ -274,8 +298,9 @@ export class Battle {
     this.hooks.onChange();
 
     if (this.state.fighters[seat].hp <= 0) {
-      // 被持續傷害打死
-      this.later(GAME_CONFIG.turnStartEffectMs, () => this.endGame(seat === 0 ? 1 : 0, 'hp'));
+      // 被持續傷害打死：結算（1v1 直接結束；2v2 換下一個人）
+      this.phase = 'resolving';
+      this.later(GAME_CONFIG.turnStartEffectMs, () => this.endTurn());
       return;
     }
     if (stunned) {
@@ -309,21 +334,45 @@ export class Battle {
   private endTurn(): void {
     if (this.finished) return;
     this.state.tickStatusesEnd(this.activeSeat);
-    const dead = this.state.deadSeats();
-    if (dead.length > 0) {
-      // 雙方同時歸零（例如自己的炸彈波及自己）時，判出手方獲勝
-      const winner: Seat = dead.length === 2 ? this.activeSeat : dead[0] === 0 ? 1 : 0;
+    this.markDead();
+    const d0 = this.state.teamDead(0),
+      d1 = this.state.teamDead(1);
+    if (d0 || d1) {
+      // 雙方同時全滅（例如自己的炸彈波及自己）時，判出手方獲勝
+      const winner: Team = d0 && d1 ? teamOf(this.activeSeat) : d0 ? 1 : 0;
       this.endGame(winner, 'hp');
       return;
     }
-    this.startTurn(this.activeSeat === 0 ? 1 : 0);
+    // 下一個還活著的人（順序 0 → 1 → 2 → 3）
+    const seats = this.state.seats;
+    let next = this.activeSeat;
+    for (let i = 1; i <= seats.length; i++) {
+      const s = seats[(seats.indexOf(this.activeSeat) + i) % seats.length];
+      if (this.state.fighters[s].hp > 0) {
+        next = s;
+        break;
+      }
+    }
+    this.startTurn(next);
   }
 
-  private endGame(winner: Seat, reason: 'hp' | 'forfeit'): void {
+  /** 新陣亡的人：從物理世界移除（東西不會再撞到他），2v2 通知大家 */
+  private markDead(): void {
+    for (const f of this.state.fighters) {
+      if (f.hp > 0 || this.eliminated.has(f.seat)) continue;
+      this.eliminated.add(f.seat);
+      if (this.mode === 'team') {
+        this.state.physics.removeChar(f.seat);
+        this.hooks.onEvent({ type: 'eliminated', seat: f.seat });
+      }
+    }
+  }
+
+  private endGame(winner: Team, reason: 'hp' | 'forfeit'): void {
     if (this.finished) return;
     this.dispose();
     this.phase = 'resolving';
-    this.hooks.onEvent({ type: 'gameOver', winnerSeat: winner, reason });
+    this.hooks.onEvent({ type: 'gameOver', winnerSeat: winner as Seat, winnerTeam: winner, reason });
     this.hooks.onGameOver(winner, reason);
   }
 

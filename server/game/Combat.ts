@@ -6,7 +6,7 @@ import { itemScaleFor } from '../../shared/config/characters.js';
 import { ARENA, DEFENSE_HIT, KNOCKBACK } from '../../shared/config/game.js';
 import type { KnockRequest } from './PhysicsWorld.js';
 import { characterHitbox, distPointRect, headLineY } from '../../shared/physics.js';
-import type { BattleEvent, DamageEntry, DefenseUpdate, Seat } from '../../shared/types.js';
+import { sideDir, teamOf, type BattleEvent, type DamageEntry, type DefenseUpdate, type Seat } from '../../shared/types.js';
 import type { BattleState } from './BattleState.js';
 
 export type ThrowEvent = Extract<BattleEvent, { type: 'throw' }>;
@@ -20,7 +20,6 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
   const defenseUpdates: DefenseUpdate[] = [];
   let statusApplied: ThrowEvent['statusApplied'] = null;
   let stuck: ThrowEvent['stuck'];
-  const enemy: Seat = seat === 0 ? 1 : 0;
   // 連恩丟的 poopoo恩 2.5 倍大：碰撞半徑一起放大
   const projScale = itemScaleFor(state.characterIds[seat], item.id);
   if (projScale !== 1) item = { ...item, radius: item.radius * projScale };
@@ -61,7 +60,8 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     const bounced = (impact.bounces ?? 0) > 0;
     const effectsOn = (target: Seat) => !bounced || !!state.traits(target).bounceTriggers?.includes(item.id);
     let stickAt: { seat: Seat; x: number; y: number; feetX: number } | null = null;
-    for (const target of [0, 1] as Seat[]) {
+    for (const target of state.seats) {
+      if (state.fighters[target].hp <= 0 && state.physics.isGone(target)) continue; // 已經陣亡離場
       let amount = 0;
       let source: DamageEntry['source'] = 'splash';
       let headshot = false;
@@ -107,6 +107,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
       if (entry && crit) entry.crit = true;
       if (entry && bounces > 0) entry.bounces = bounces;
       if (entry && source === 'direct' && target === seat) entry.self = true;
+      else if (entry && source === 'direct' && teamOf(target) === teamOf(seat)) entry.ally = true;
       if (entry) {
         damages.push(entry);
         hitSeats.push(target);
@@ -126,16 +127,18 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
         const e = state.dealDamage(knockSeat, old, 'status');
         if (e) damages.push({ ...e, label: '年邁' });
       }
-      // 打到自己：照投擲物飛行的方向被推（通常是往前倒）
-      const away = knockSeat === seat ? (impactVel.x === 0 ? (seat === 0 ? 1 : -1) : Math.sign(impactVel.x)) : undefined;
+      // 打到自己或隊友：照投擲物飛行的方向被推（通常是往前倒）
+      const away = teamOf(knockSeat) === teamOf(seat) ? (impactVel.x === 0 ? sideDir(seat) : Math.sign(impactVel.x)) : undefined;
       knock = knockRequest(knockSeat, knockSpeed, impact.y, impactVel, state.fighters[knockSeat].hp <= 0, item.weightKg ?? 0.5, state.physics.getCharScale(knockSeat), away);
     }
 
-    // 3) 附加狀態：直接打中誰就給誰（打到自己也一樣）；爆炸波及只附加給敵人
-    const statusSeat: Seat = impact.kind === 'character' && impact.hitSeat !== undefined ? impact.hitSeat : enemy;
-    if (item.onHitStatus && hitSeats.includes(statusSeat) && effectsOn(statusSeat)) {
-      const applied = state.applyStatus(statusSeat, item.onHitStatus.statusId, item.onHitStatus.turns, seat);
-      statusApplied = { seat: statusSeat, statusId: item.onHitStatus.statusId, turns: applied || item.onHitStatus.turns, ...(applied ? {} : { immune: true }) };
+    // 3) 附加狀態：直接打中誰就給誰（打到自己、隊友也一樣）；爆炸波及只附加給敵人
+    const statusSeats: Seat[] =
+      impact.kind === 'character' && impact.hitSeat !== undefined ? [impact.hitSeat] : hitSeats.filter((s) => teamOf(s) !== teamOf(seat));
+    for (const st of statusSeats) {
+      if (!item.onHitStatus || !hitSeats.includes(st) || !effectsOn(st)) continue;
+      const applied = state.applyStatus(st, item.onHitStatus.statusId, item.onHitStatus.turns, seat);
+      statusApplied ??= { seat: st, statusId: item.onHitStatus.statusId, turns: applied || item.onHitStatus.turns, ...(applied ? {} : { immune: true }) };
     }
     return { remove: destroyedNow, knock };
   });
@@ -181,7 +184,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
   const reward = state.traits(seat).streakReward;
   if (reward) {
     const f = state.fighters[seat];
-    const hitEnemy = sim.impact.kind === 'character' && sim.impact.hitSeat === enemy;
+    const hitEnemy = sim.impact.kind === 'character' && sim.impact.hitSeat !== undefined && teamOf(sim.impact.hitSeat) !== teamOf(seat);
     f.hitStreak = hitEnemy ? (f.hitStreak ?? 0) + 1 : 0;
     if (f.hitStreak >= reward.hits) {
       f.hitStreak = 0;
@@ -281,7 +284,7 @@ export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: 
   const half = (ARENA.characterBody.torsoH / 2 + 16) * bodyScale; // 身體中心到頭頂/腳底約 75px（矮的角色比較短）
   const comY = ARENA.groundY - 75 * bodyScale;
   const rel = Math.max(-1, Math.min(1, (hitY - comY) / half)); // -1 頭頂、0 中心、+1 腳底
-  const away = awayDir ?? (seat === 0 ? -1 : 1); // 被打的人往自己身後飛（打到自己時照投擲物方向）
+  const away = awayDir ?? -sideDir(seat); // 被打的人往自己身後飛（打到自己時照投擲物方向）
   // 投擲物是往下砸的話，往後推的比例小一點（力量被地面吃掉）
   const len = Math.hypot(vel.x, vel.y) || 1;
   const horiz = Math.max(0.55, Math.abs(vel.x) / len);

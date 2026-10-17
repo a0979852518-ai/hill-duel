@@ -827,3 +827,10 @@ export function getItem(id: string): ItemDef | undefined {
 export function getStatus(id: string): StatusDef | undefined {
   return STATUSES.find((s) => s.id === id);
 }
+
+/** 功能道具是不是作用在「一個敵人」身上（2v2 時要先選目標） */
+export function itemTargetsEnemy(item: ItemDef | undefined): boolean {
+  if (!item || item.kind !== 'functional') return false;
+  if (item.handler === 'directDamage' || item.handler === 'damageBoth') return true;
+  return item.handler === 'applyStatus' && item.params.target !== 'self';
+}

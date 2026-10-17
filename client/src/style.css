@@ -283,3 +283,41 @@ body.mobile .sel-foot .btn[data-act=back] { min-width: 0; }
 .settings-btn { margin-top: 10px; }
 body.mobile .menu-col .settings-btn { margin-top: 14px; }
 body.mobile.short .menu-col .settings-btn { margin-top: 8px; }
+
+/* ---------------- 1v1 / 2v2 模式切換、2v2 等待房間 ---------------- */
+.mode-row { display: flex; gap: 0; margin: 4px 0 12px; border: 2px solid var(--ink); border-radius: 12px; overflow: hidden; }
+.mode-btn { flex: 1; border: 0; padding: 9px 6px; font: inherit; font-weight: 900; font-size: 15px; background: #fff; color: var(--ink); cursor: pointer; }
+.mode-btn + .mode-btn { border-left: 2px solid var(--ink); }
+.mode-btn.on { background: var(--ink); color: #fff; }
+.team-slots { display: flex; gap: 12px; margin: 14px 0; }
+.team-col { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: 14px; }
+.team-col.t0 { background: rgba(61, 123, 216, 0.14); }
+.team-col.t1 { background: rgba(216, 70, 61, 0.14); }
+.team-title { font-weight: 900; text-align: center; }
+.team-col.t0 .team-title { color: var(--blue); }
+.team-col.t1 .team-title { color: var(--red); }
+.team-col .player-slot { padding: 7px; }
+.team-col .player-slot.empty { cursor: pointer; opacity: 0.6; }
+.team-col .player-slot.empty:hover { opacity: 0.9; }
+.player-slot.mine { box-shadow: 0 0 0 3px #ffd54f; }
+.player-slot .swap { font-size: 11px; opacity: 0.8; }
+.pick-tag.p2 { background: #5aa0f0; }
+.pick-tag.p3 { background: #f07a5a; }
+.select-status .t0 b { color: var(--blue); }
+.select-status .t1 b { color: var(--red); }
+body.mobile .mode-row { margin: 0 0 6px; }
+body.mobile .mode-btn { padding: 6px; font-size: 13px; }
+body.mobile .team-slots { margin: 6px 0; gap: 8px; }
+body.mobile .team-col .player-slot { padding: 4px; }
+body.mobile .team-col .player-slot .name { font-size: 14px; }
+/* 手機橫向：2v2 等待房間左右兩欄 */
+body.mobile [data-screen=waiting] .wait-cols { display: flex; gap: 14px; align-items: center; }
+body.mobile [data-screen=waiting] .wait-main { flex: 1.4; min-width: 0; }
+body.mobile [data-screen=waiting] .wait-side { flex: 1; min-width: 0; }
+body.mobile [data-screen=waiting] .room-code { font-size: 26px; padding: 4px 10px; margin: 4px 0; }
+body.mobile [data-screen=waiting] h2 { margin: 0; }
+body.mobile [data-screen=waiting] .subtitle { margin: 2px 0; }
+body.mobile [data-screen=waiting] .ai-row { flex-wrap: wrap; }
+body.mobile [data-screen=waiting] .ai-row .btn { flex: 1 1 40%; padding: 8px 4px; }
+body.mobile .panel.team-wait { width: min(780px, 100%); padding: 12px 18px; }
+.panel.team-wait { width: min(560px, 100%); }

@@ -6,8 +6,10 @@ import type {
   BattleEvent,
   ClientToServerEvents,
   ErrorCode,
+  GameMode,
   JoinResult,
   RoomSnapshot,
+  Seat,
   ServerToClientEvents,
 } from '../../../shared/types.js';
 
@@ -16,7 +18,7 @@ type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export interface Session {
   code: string;
   token: string;
-  seat: 0 | 1;
+  seat: Seat;
 }
 
 const SESSION_KEY = 'hillduel.session';
@@ -34,6 +36,7 @@ export class Network {
   private statusListeners = new Set<Listener<{ connected: boolean; resumeFailed?: ErrorCode }>>();
   private closedListeners = new Set<Listener<string>>();
   private matchListeners = new Set<Listener<JoinResult>>();
+  private queueListeners = new Set<Listener<number>>();
 
   constructor() {
     // 開發時透過 Vite proxy、正式時同一個網址；若前後端分開部署，可用 VITE_SERVER_URL 指定
@@ -59,6 +62,7 @@ export class Network {
       this.setSession(r);
       this.matchListeners.forEach((l) => l(r));
     });
+    this.socket.on('match:queue', ({ queued }) => this.queueListeners.forEach((l) => l(queued)));
     this.socket.on('room:closed', ({ reason }) => {
       this.clearSession();
       this.closedListeners.forEach((l) => l(reason));
@@ -82,10 +86,28 @@ export class Network {
     return () => this.matchListeners.delete(l);
   }
 
+  /** 2v2 排隊人數變化 */
+  onQueue(l: Listener<number>) {
+    this.queueListeners.add(l);
+    return () => this.queueListeners.delete(l);
+  }
+
   /** 隨機匹配：排進隊伍；配到時 onMatchFound 會通知 */
-  async joinMatch(name: string) {
+  async joinMatch(name: string, mode: GameMode = 'duel') {
     saveName(name);
-    return this.call<{ queued: number }>('match:join', { name });
+    return this.call<{ queued: number }>('match:join', { name, mode });
+  }
+
+  /** 2v2 排隊等太久：用電腦補滿開打 */
+  fillMatchAi() {
+    return this.call('match:fillAi');
+  }
+
+  /** 等待中換位置（換隊） */
+  async changeSeat(seat: Seat) {
+    const res = await this.call('room:seat', { seat });
+    if (res.ok && this.session) this.setSession({ ...this.session, seat });
+    return res;
   }
 
   cancelMatch() {
@@ -121,17 +143,17 @@ export class Network {
     (this.socket.emit as any)(event, payload);
   }
 
-  async createRoom(name: string) {
+  async createRoom(name: string, mode: GameMode = 'duel') {
     saveName(name);
-    const res = await this.call<JoinResult>('room:create', { name });
+    const res = await this.call<JoinResult>('room:create', { name, mode });
     if (res.ok) this.setSession(res);
     return res;
   }
 
   /** 單人對戰電腦 */
-  async createAiRoom(name: string, difficulty: AiDifficulty) {
+  async createAiRoom(name: string, difficulty: AiDifficulty, mode: GameMode = 'duel') {
     saveName(name);
-    const res = await this.call<JoinResult>('room:createAi', { name, difficulty });
+    const res = await this.call<JoinResult>('room:createAi', { name, difficulty, mode });
     if (res.ok) this.setSession(res);
     return res;
   }

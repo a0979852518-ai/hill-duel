@@ -4,16 +4,20 @@ import { randomUUID } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import { getCharacter } from '../../shared/config/characters.js';
 import { ARENA, GAME_CONFIG } from '../../shared/config/game.js';
-import type {
-  AiDifficulty,
-  ClientToServerEvents,
-  ErrorCode,
-  PlayerView,
-  RoomSnapshot,
-  RoomStatus,
-  Seat,
-  ServerToClientEvents,
+import {
+  seatCountOf,
+  type AiDifficulty,
+  type ClientToServerEvents,
+  type ErrorCode,
+  type GameMode,
+  type PlayerView,
+  type RoomSnapshot,
+  type RoomStatus,
+  type Seat,
+  type ServerToClientEvents,
+  type Team,
 } from '../../shared/types.js';
+import { startXOf } from '../../shared/physics.js';
 import { AiPlayer, AI_PROFILES } from '../game/AiPlayer.js';
 import { Battle } from '../game/Battle.js';
 import { randomMapId } from '../../shared/config/maps.js';
@@ -41,12 +45,12 @@ interface RoomPlayer {
 
 export class Room {
   status: RoomStatus = 'waiting';
-  players: [RoomPlayer | null, RoomPlayer | null] = [null, null];
+  players: (RoomPlayer | null)[];
   battle: Battle | null = null;
-  winnerSeat: Seat | null = null;
+  winnerTeam: Team | null = null;
   endReason: 'hp' | 'forfeit' | null = null;
   private cleanupTimer: NodeJS.Timeout | null = null;
-  private ai: AiPlayer | null = null;
+  private ais: AiPlayer[] = [];
   /** 這場的地圖（開打時隨機挑） */
   mapId: string | null = null;
 
@@ -54,18 +58,40 @@ export class Room {
     readonly code: string,
     private readonly io: IO,
     private readonly onDestroy: (code: string) => void,
-  ) {}
+    readonly mode: GameMode = 'duel',
+  ) {
+    this.players = Array.from({ length: seatCountOf(mode) }, () => null);
+  }
 
   // ------------------------------------------------------------ 進出房間
 
+  private get full(): boolean {
+    return this.players.every((p) => p);
+  }
+
+  private freeSeat(): Seat | null {
+    const i = this.players.findIndex((p) => !p);
+    return i < 0 ? null : (i as Seat);
+  }
+
+  /** 人到齊了就進入選角 */
+  private checkFull(): void {
+    if (this.full && this.status === 'waiting') this.status = 'characterSelect';
+  }
+
   canJoin(): ErrorCode | null {
     if (this.status !== 'waiting' && this.status !== 'characterSelect') return 'GAME_STARTED';
-    if (this.players[0] && this.players[1]) return 'ROOM_FULL';
+    if (this.full) return 'ROOM_FULL';
     return null;
   }
 
+  /** 房間裡還有沒有真人 */
+  get humans(): number {
+    return this.players.filter((p) => p && !p.bot).length;
+  }
+
   addPlayer(name: string, socket: GameSocket): { seat: Seat; token: string } {
-    const seat: Seat = this.players[0] ? 1 : 0;
+    const seat = this.freeSeat() ?? 0;
     const player: RoomPlayer = {
       seat,
       name,
@@ -78,18 +104,42 @@ export class Room {
     };
     this.players[seat] = player;
     this.attach(seat, socket);
-    if (this.players[0] && this.players[1] && this.status === 'waiting') this.status = 'characterSelect';
+    this.checkFull();
     this.broadcast();
     return { seat, token: player.token };
   }
 
-  /** 加入電腦玩家（坐 1 號位，隨機角色，直接確認） */
+  /** 等待中換到另一個空位（換隊） */
+  changeSeat(from: Seat, to: Seat, socket: GameSocket): ErrorCode | null {
+    if (this.status !== 'waiting') return 'WRONG_PHASE';
+    if (!Number.isInteger(to) || to < 0 || to >= this.players.length) return 'INVALID_INPUT';
+    const p = this.players[from];
+    if (!p || this.players[to]) return 'INVALID_POSITION';
+    this.players[from] = null;
+    p.seat = to;
+    this.players[to] = p;
+    socket.data.seat = to;
+    this.broadcast();
+    return null;
+  }
+
+  /** 空位全部用電腦補滿 */
+  fillBots(difficulty: AiDifficulty): ErrorCode | null {
+    if (this.status !== 'waiting') return 'WRONG_PHASE';
+    while (this.freeSeat() !== null) this.addBot(difficulty);
+    return null;
+  }
+
+  /** 加入電腦玩家（坐第一個空位，隨機角色，直接確認） */
   addBot(difficulty: AiDifficulty): void {
+    const seat = this.freeSeat();
+    if (seat === null) return;
     const pool = CHARACTERS.filter((c) => c.enabled !== false);
     const c = pool[Math.floor(Math.random() * pool.length)];
-    this.players[1] = {
-      seat: 1,
-      name: `電腦・${AI_PROFILES[difficulty].label}`,
+    const n = this.players.filter((p) => p?.bot).length;
+    this.players[seat] = {
+      seat,
+      name: `電腦・${AI_PROFILES[difficulty].label}${this.mode === 'team' ? n + 1 : ''}`,
       token: randomUUID(),
       socketId: null,
       connected: true,
@@ -98,7 +148,7 @@ export class Room {
       dropTimer: null,
       bot: difficulty,
     };
-    if (this.players[0] && this.status === 'waiting') this.status = 'characterSelect';
+    this.checkFull();
     this.broadcast();
   }
 
@@ -188,40 +238,44 @@ export class Room {
     if (!p.characterId) return 'INVALID_INPUT';
     if (p.confirmed) return 'WRONG_PHASE';
     p.confirmed = true;
-    if (this.players[0]?.confirmed && this.players[1]?.confirmed) this.startBattle();
+    if (this.players.every((x) => x?.confirmed)) this.startBattle();
     else this.broadcast();
     return null;
   }
 
   private startBattle(): void {
-    const [a, b] = this.players;
-    if (!a || !b) return;
-    const hpA = getCharacter(a.characterId!)!.maxHp;
-    const hpB = getCharacter(b.characterId!)!.maxHp;
+    if (!this.players.every((p) => p)) return;
+    const ps = this.players as RoomPlayer[];
+    const hp = ps.map((p) => getCharacter(p.characterId!)!.maxHp);
     this.status = 'battle';
     // 測試用：環境變數 HILLDUEL_MAP=hallway 可以固定地圖
     this.mapId = process.env.HILLDUEL_MAP || randomMapId();
     this.battle = new Battle(
-      [hpA, hpB],
+      hp,
       {
       onChange: () => this.broadcast(),
       onEvent: (e) => this.io.to(this.code).emit('game:event', e),
       onGameOver: (winner, reason) => {
         this.status = 'gameOver';
-        this.winnerSeat = winner;
+        this.winnerTeam = winner;
         this.endReason = reason;
         this.broadcast();
         this.scheduleCleanup(5 * 60_000);
       },
       },
       Math.random,
-      [a.characterId, b.characterId],
+      ps.map((p) => p.characterId),
+      this.mode,
     );
-    const first: Seat = GAME_CONFIG.firstTurn === 'host' ? 0 : Math.random() < 0.5 ? 0 : 1;
-    for (const p of this.players) {
-      if (!p?.bot) continue;
-      this.ai = new AiPlayer(this.battle, p.seat, p.bot, (angle, power) =>
-        this.io.to(this.code).emit('game:event', { type: 'aimPreview', seat: p.seat, angle, power }),
+    // 2v2 固定 1 號先（順序 1 → 3 → 2 → 4）；1v1 隨機
+    const first: Seat = GAME_CONFIG.firstTurn === 'host' || this.mode === 'team' ? 0 : Math.random() < 0.5 ? 0 : 1;
+    this.ais = [];
+    for (const p of ps) {
+      if (!p.bot) continue;
+      this.ais.push(
+        new AiPlayer(this.battle, p.seat, p.bot, (angle, power) =>
+          this.io.to(this.code).emit('game:event', { type: 'aimPreview', seat: p.seat, angle, power }),
+        ),
       );
     }
     this.broadcast();
@@ -244,7 +298,7 @@ export class Room {
         hp: f?.hp ?? maxHp,
         maxHp,
         statuses: f ? f.statuses.map((s) => ({ ...s })) : [],
-        x: f?.x ?? ARENA.characterStartX[p.seat],
+        x: f?.x ?? startXOf(p.seat, this.mode),
         ...(f && f.stuck.length ? { stuck: f.stuck.map((s) => ({ ...s })) } : {}),
         ...(f?.hitStreak ? { streak: f.hitStreak } : {}),
         ...(f?.huReady ? { huReady: true } : {}),
@@ -252,14 +306,16 @@ export class Room {
         ...(f?.shield ? { shield: f.shield } : {}),
         ...(p.bot ? { bot: p.bot } : {}),
       };
-    }) as RoomSnapshot['players'];
+    });
     return {
       code: this.code,
       status: this.status,
+      mode: this.mode,
       players,
       defenses: this.battle?.state.defenseViews() ?? [],
       turn: this.battle && this.status === 'battle' ? this.battle.turnView() : null,
-      winnerSeat: this.winnerSeat,
+      winnerSeat: this.winnerTeam,
+      winnerTeam: this.winnerTeam,
       endReason: this.endReason,
       ...(this.mapId ? { mapId: this.mapId } : {}),
     };
@@ -268,7 +324,7 @@ export class Room {
   broadcast(): void {
     this.io.to(this.code).emit('room:state', this.snapshot());
     // 狀態一改變就讓電腦看看是不是輪到它（setTimeout 0：等目前的操作整個處理完）
-    if (this.ai) setTimeout(() => this.ai?.poke(), 0);
+    if (this.ais.length) setTimeout(() => this.ais.forEach((a) => a.poke()), 0);
   }
 
   // ------------------------------------------------------------ 清理
@@ -290,8 +346,8 @@ export class Room {
 
   destroy(): void {
     this.cancelCleanup();
-    this.ai?.dispose();
-    this.ai = null;
+    this.ais.forEach((a) => a.dispose());
+    this.ais = [];
     this.battle?.dispose();
     for (const p of this.players) if (p?.dropTimer) clearTimeout(p.dropTimer);
     this.io.to(this.code).emit('room:closed', { reason: '房間已關閉' });

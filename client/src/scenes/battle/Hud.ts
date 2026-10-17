@@ -4,7 +4,7 @@ import * as Phaser from 'phaser';
 import { getCharacter, traitsOf } from '../../../../shared/config/characters.js';
 import { ARENA } from '../../../../shared/config/game.js';
 import { getStatus, PERMANENT_TURNS } from '../../../../shared/config/items.js';
-import type { PlayerView, RoomSnapshot, Seat, TurnPhase } from '../../../../shared/types.js';
+import { teamOf, type GameMode, type PlayerView, type RoomSnapshot, type Seat, type TurnPhase } from '../../../../shared/types.js';
 import { FONT } from './effects.js';
 import { sfx } from '../../game/sfx.js';
 
@@ -20,7 +20,8 @@ const PHASE_TEXT: Record<TurnPhase, string> = {
 };
 
 const BAR_W = 300;
-const SEAT_COLOR = [0x3d7bd8, 0xd8463d];
+/** 座位顏色：左隊藍、右隊紅（2v2 的 2、3 號用淺一點的同色） */
+export const SEAT_COLOR = [0x3d7bd8, 0xd8463d, 0x5aa0f0, 0xf07a5a];
 
 interface SidePanel {
   name: Phaser.GameObjects.Text;
@@ -45,8 +46,12 @@ export class Hud {
   private timerTotal = 1;
   private timerActive = false;
 
-  constructor(private scene: Phaser.Scene) {
-    for (const seat of [0, 1] as Seat[]) this.sides.push(this.makeSide(seat));
+  constructor(
+    private scene: Phaser.Scene,
+    private mode: GameMode = 'duel',
+  ) {
+    const seats: Seat[] = mode === 'team' ? [0, 1, 2, 3] : [0, 1];
+    for (const seat of seats) this.sides.push(mode === 'team' ? this.makeCompactSide(seat) : this.makeSide(seat));
     const cx = ARENA.width / 2;
     this.turnText = scene.add
       .text(cx, 18, '', { fontFamily: FONT, fontSize: '22px', fontStyle: '900', color: '#ffffff', stroke: '#2b2118', strokeThickness: 6 })
@@ -98,13 +103,55 @@ export class Hud {
     return { name, char, hpText, barFill, barLag, status, offline, activeGlow, shownHp: -1, maxHp: 1 };
   }
 
+  /** 2v2：每隊兩個比較矮的面板，上下疊 */
+  private makeCompactSide(seat: Seat): SidePanel {
+    const s = this.scene;
+    const left = teamOf(seat) === 0;
+    const row = seat >= 2 ? 1 : 0;
+    const w = BAR_W + 24;
+    const h = 62;
+    const x = left ? 16 : ARENA.width - 16 - w;
+    const y = 8 + row * (h + 6);
+    const activeGlow = s.add.rectangle(x + w / 2, y + h / 2, w + 10, h + 10, 0xffd54f, 0).setDepth(98).setStrokeStyle(5, 0xffd54f, 0);
+    s.add.rectangle(x + w / 2, y + h / 2, w, h, 0xfff8ea, 0.95).setStrokeStyle(3, 0x2b2118).setDepth(99);
+    s.add.rectangle(x + (left ? 6 : w - 6), y + h / 2, 8, h, SEAT_COLOR[seat]).setDepth(99);
+    const tx = left ? x + 18 : x + w - 18;
+    const origin = left ? 0 : 1;
+    const name = s.add.text(tx, y + 5, '', { fontFamily: FONT, fontSize: '16px', fontStyle: '900', color: '#2b2118' }).setOrigin(origin, 0).setDepth(100);
+    const char = s.add.text(tx, y + 5, '', { fontFamily: FONT, fontSize: '12px', fontStyle: '700', color: '#6d5c4b' }).setOrigin(origin, 0).setDepth(100).setVisible(false);
+    const hpText = s.add
+      .text(left ? x + w - 12 : x + 12, y + 5, '', { fontFamily: FONT, fontSize: '15px', fontStyle: '900', color: '#d8463d' })
+      .setOrigin(left ? 1 : 0, 0)
+      .setDepth(100);
+    const barX = x + 12;
+    const barY = y + 27;
+    s.add.rectangle(barX, barY, BAR_W, 13, 0x2b2118).setOrigin(0, 0).setDepth(100);
+    const barLag = s.add.rectangle(left ? barX + 2 : barX + BAR_W - 2, barY + 2, BAR_W - 4, 9, 0xffffff).setOrigin(left ? 0 : 1, 0).setDepth(100);
+    const barFill = s.add.rectangle(left ? barX + 2 : barX + BAR_W - 2, barY + 2, BAR_W - 4, 9, 0x66bb6a).setOrigin(left ? 0 : 1, 0).setDepth(101);
+    // 狀態太多時只顯示一行（面板很矮）
+    const status = s.add
+      .text(tx, y + 43, '', { fontFamily: FONT, fontSize: '11px', fontStyle: '800', color: '#4e8a1f', wordWrap: { width: BAR_W - 10 }, maxLines: 1 })
+      .setOrigin(origin, 0)
+      .setDepth(100);
+    const offline = s.add
+      .text(x + w / 2, y + h / 2, '斷線中…', { fontFamily: FONT, fontSize: '15px', fontStyle: '900', color: '#ffffff', backgroundColor: '#e53935', padding: { x: 6, y: 3 } })
+      .setOrigin(0.5)
+      .setDepth(105)
+      .setVisible(false);
+    return { name, char, hpText, barFill, barLag, status, offline, activeGlow, shownHp: -1, maxHp: 1 };
+  }
+
   /** 更新名稱、角色、狀態、連線（血量另外處理，因為要配合動畫） */
   updatePlayers(snap: RoomSnapshot, mySeat: Seat | null): void {
     snap.players.forEach((p, i) => {
       if (!p) return;
       const side = this.sides[i];
-      side.name.setText(p.name + (p.seat === mySeat ? '（你）' : ''));
-      side.char.setText(getCharacter(p.characterId ?? '')?.name ?? '');
+      const cname = getCharacter(p.characterId ?? '')?.name ?? '';
+      const me = p.seat === mySeat ? '（你）' : '';
+      // 2v2 面板比較小：名字和角色寫在同一行；陣亡的人標記出來
+      if (this.mode === 'team') side.name.setText(`${p.name}${me}・${cname}${p.hp <= 0 ? '  ✖陣亡' : ''}`);
+      else side.name.setText(p.name + me);
+      side.char.setText(cname);
       side.offline.setVisible(!p.connected);
       side.status.setText(
         p.statuses
@@ -143,7 +190,7 @@ export class Hud {
 
   setHp(seat: Seat, hp: number, animate = true): void {
     const side = this.sides[seat];
-    if (side.shownHp === hp) return;
+    if (!side || side.shownHp === hp) return;
     side.shownHp = hp;
     const ratio = Math.max(0, Math.min(1, hp / Math.max(1, side.maxHp)));
     side.hpText.setText(`${hp} / ${side.maxHp}`);
@@ -167,7 +214,7 @@ export class Hud {
     }
     const activeName = snap.players[t.activeSeat]?.name ?? '';
     this.turnText.setText(t.activeSeat === mySeat ? '你的回合' : `${activeName} 的回合`);
-    this.turnText.setColor(t.activeSeat === 0 ? '#bcd6ff' : '#ffc9c4');
+    this.turnText.setColor(teamOf(t.activeSeat) === 0 ? '#bcd6ff' : '#ffc9c4');
     this.phaseText.setVisible(true).setText(PHASE_TEXT[t.phase] + (t.timer ? (t.timer.stage === 'draw' ? '（第一階段）' : '（第二階段）') : ''));
     if (t.timer) {
       this.timerActive = true;
