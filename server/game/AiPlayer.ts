@@ -137,6 +137,7 @@ export class AiPlayer {
     const me = st.fighters[this.seat],
       foe = st.fighters[this.seat === 0 ? 1 : 0];
     const hitRate = this.difficulty === 'nightmare' ? 0.9 : this.difficulty === 'hard' ? 0.6 : 0.35;
+    if (item.kind === 'throwable' && item.selfLaunch) return 1; // 移動：沒什麼用
     if (item.kind === 'throwable') {
       // 角色技能加成（連恩的 Maya ×4、poopoo恩 ×3）
       let v = item.damage * (st.traits(this.seat).ownItemMultiplier?.[item.id] ?? 1) * hitRate;
@@ -187,7 +188,8 @@ export class AiPlayer {
   private doThrow(turnId: number): void {
     const item = getItem(this.battle.turnView().chosenItemId ?? '') as ThrowableDef | undefined;
     if (!item || item.kind !== 'throwable') return;
-    const best = this.solve(item);
+    // 移動：隨便跳一下換位置
+    const best = item.selfLaunch ? { angle: 35 + Math.random() * 25, power: 0.3 + Math.random() * 0.7, score: 0 } : this.solve(item);
     const p = this.profile;
     const angle = Math.max(-10, Math.min(88, best.angle + gauss() * p.angleErr));
     const power = Math.max(0.05, Math.min(1, best.power + gauss() * p.powerErr));

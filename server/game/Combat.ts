@@ -15,6 +15,7 @@ export type ThrowEvent = Extract<BattleEvent, { type: 'throw' }>;
 export const HEADSHOT_MULTIPLIER = 1.5;
 
 export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef, angle: number, power: number): ThrowEvent {
+  if (item.selfLaunch) return resolveLeap(state, seat, item, angle, power);
   const damages: DamageEntry[] = [];
   const defenseUpdates: DefenseUpdate[] = [];
   let statusApplied: ThrowEvent['statusApplied'] = null;
@@ -213,6 +214,51 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     ...(sleepFrames.length ? { sleepFrames } : {}),
     ...(hu ? { hu } : {}),
     ...(stuck ? { stuck } : {}),
+  };
+}
+
+/** 「移動」：把自己射出去換位置；落在別人身上造成傷害並把對方推開 */
+function resolveLeap(state: BattleState, seat: Seat, item: ThrowableDef, angle: number, power: number): ThrowEvent {
+  const damages: DamageEntry[] = [];
+  const sim = state.physics.leap(seat, item, angle, power, (target, vel, at) => {
+    const entry = state.dealDamage(target, item.damage, 'direct', seat, undefined, item.id);
+    if (entry) damages.push(entry);
+    const dead = state.fighters[target].hp <= 0;
+    const sp = Math.hypot(vel.x, vel.y);
+    const knockSpeed = 260 + 260 * Math.min(1, sp / Math.max(1, item.maxSpeed));
+    const away = Math.sign(vel.x) || (state.physics.getCharX(target) > state.physics.getCharX(seat) ? 1 : -1);
+    return knockRequest(target, knockSpeed, at.y, vel, dead, item.weightKg ?? 6, state.physics.getCharScale(target), away);
+  });
+  state.syncCharacters();
+  const frameHeals: NonNullable<ThrowEvent['frameHeals']> = [];
+  const sleepFrames: NonNullable<ThrowEvent['sleepFrames']> = [];
+  if (sim.knockSleep) {
+    const ks = sim.knockSleep;
+    sleepFrames.push({ seat: ks.seat, frame: ks.sleepFrame });
+    const amount = state.traits(ks.seat).sleepHeal ?? 0;
+    if (amount > 0 && state.fighters[ks.seat].hp > 0) {
+      const h = state.heal(ks.seat, amount);
+      if (h && h.amount > 0) frameHeals.push({ ...h, frame: ks.wakeFrame, label: '睡飽了' });
+    }
+  }
+  const defenseUpdates: DefenseUpdate[] = [...state.dropFallen(sim.fell)];
+  state.syncPoses();
+  return {
+    type: 'throw',
+    seat,
+    itemId: item.id,
+    angle,
+    power,
+    frames: sim.frames,
+    impactFrame: sim.impactFrame,
+    impact: { x: sim.impact.x, y: sim.impact.y, kind: sim.impact.kind },
+    explosionRadius: 0,
+    damages,
+    defenseUpdates,
+    statusApplied: null,
+    bounceFrames: [],
+    ...(frameHeals.length ? { frameHeals } : {}),
+    ...(sleepFrames.length ? { sleepFrames } : {}),
   };
 }
 

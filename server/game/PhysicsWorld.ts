@@ -79,6 +79,8 @@ interface KnockState {
   away: number;
   /** 往前飛（打到自己）：動作圖要左右鏡像 */
   rev: boolean;
+  /** 「移動」：直立跳過去，落地就站好 */
+  leap: boolean;
   /** 擊退初速（決定在地上滾幾圈） */
   speed: number;
   /** 翻滾結束時身體中心 */
@@ -119,6 +121,8 @@ export interface KnockRequest {
   speed: number;
   /** 往哪邊飛（-1 / 1）；沒給就是往自己身後（打到自己時可能往前飛） */
   away?: number;
+  /** 「移動」道具：自己跳出去，身體保持直立、落地就站好 */
+  leap?: boolean;
 }
 
 export interface ThrowImpact {
@@ -320,8 +324,8 @@ export class PhysicsWorld {
       }
     }
     this.hideChar(seat, true);
-    // 戴在頭上/靠在身上的東西跟著被打飛
-    for (const info of this.defs.values()) {
+    // 戴在頭上/靠在身上的東西跟著被打飛（自己跳開的話就不會）
+    for (const info of req.leap ? [] : this.defs.values()) {
       const p = info.body.position;
       if (!info.wearable && Math.abs(p.x - x) < 70 && p.y < G - 20 && p.y > G - 260 * this.cs[seat]) {
         Body.setVelocity(info.body, { x: (req.vx * 0.7) / 60, y: (req.vy * 0.6 - 180) / 60 });
@@ -339,6 +343,11 @@ export class PhysicsWorld {
       frictionAir: 0.004,
       collisionFilter: { category: CAT.tumble, mask: CAT.world | CAT.bound | (seat === 0 ? CAT.char1 : CAT.char0) },
     });
+    if (req.leap) {
+      // 跳躍：不會轉，撞得到其他人（落在別人身上）
+      Body.setInertia(body, Infinity);
+      body.collisionFilter.mask = CAT.world | CAT.bound | (seat === 0 ? CAT.char1 : CAT.char0);
+    }
     Body.setVelocity(body, { x: req.vx / 60, y: req.vy / 60 });
     Body.setAngularVelocity(body, req.omega / 60);
     Composite.add(this.engine.world, body);
@@ -349,7 +358,8 @@ export class PhysicsWorld {
       t: 0,
       restSteps: 0,
       away: req.away ?? (seat === 0 ? -1 : 1),
-      rev: (req.away ?? (seat === 0 ? -1 : 1)) !== (seat === 0 ? -1 : 1),
+      rev: !req.leap && (req.away ?? (seat === 0 ? -1 : 1)) !== (seat === 0 ? -1 : 1),
+      leap: !!req.leap,
       speed: req.speed,
       com: { x, y: G - ts.h / 2 },
       angle0: 0,
@@ -424,6 +434,26 @@ export class PhysicsWorld {
   private stepKnockInner(k: KnockState, dt: number): void {
     k.t += dt;
     const range = ARENA.characterXRange[k.seat];
+    if (k.leap) {
+      const b = k.body;
+      // 快到可移動範圍的邊緣就煞車（跟被打飛一樣）
+      const edge = b.velocity.x < 0 ? range[0] : range[1];
+      const dirX = Math.sign(b.velocity.x);
+      const toEdge = (edge - b.position.x) * dirX;
+      if (dirX !== 0 && toEdge < 200) Body.setVelocity(b, { x: (Math.max(0, toEdge * 3) / 60) * dirX, y: b.velocity.y });
+      const ts = this.tumbleSize(k.seat);
+      const lowest = b.position.y + ts.h / 2;
+      if (lowest < ARENA.groundY - 6) k.airborne = true;
+      const landed = k.airborne && lowest >= ARENA.groundY - 3 && b.velocity.y >= -0.2;
+      if (landed || (!k.airborne && k.t > 0.35) || k.t > 3) {
+        k.endX = Math.min(range[1], Math.max(range[0], b.position.x));
+        Composite.remove(this.engine.world, b);
+        this.moveCharHidden(k.seat, k.endX);
+        this.hideChar(k.seat, false);
+        k.done = true;
+      }
+      return;
+    }
     if (k.phase === 'tumble') {
       const b = k.body;
       // 快到可移動範圍的邊緣：往外的速度慢慢被吃掉（像地面變黏），不會撞到隱形牆
@@ -518,6 +548,7 @@ export class PhysicsWorld {
 
   private knockPose(k: KnockState): Pose5 {
     const G = ARENA.groundY;
+    if (k.leap) return k.done ? [k.endX, 0, 0, 1, 0] : this.poseFromCom(k.body.position.x, k.body.position.y, 0, 1, 0, this.tumbleSize(k.seat).h / 2);
     if (k.phase === 'tumble') return this.poseFromCom(k.body.position.x, k.body.position.y, k.body.angle, 1, k.t < 0.12 ? 1 : 2, this.tumbleSize(k.seat).h / 2);
     if (k.phase === 'roll') {
       // 縮成一團在地上往後滾（圖 3、4 交替，整團跟著轉），每滾半圈彈一下
@@ -892,6 +923,102 @@ export class PhysicsWorld {
     const knockSleep =
       knock && knock.wakeFrame !== undefined && !knock.stayDown ? { seat: knock.seat, sleepFrame: knock.sleepFrame ?? 0, wakeFrame: knock.wakeFrame } : undefined;
     return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell, impactSpeed, crushes, bounceFrames, knockSleep };
+  }
+
+  /**
+   * 「移動」道具：把自己射出去。身體保持直立，落地就站好（不能超出自己的可移動範圍）。
+   * 途中撞到其他人 → onHit（回傳要不要把對方推開）。
+   */
+  leap(
+    seat: Seat,
+    item: ThrowableDef,
+    angleDeg: number,
+    power: number,
+    onHit: (hitSeat: Seat, vel: { x: number; y: number }, at: { x: number; y: number }) => KnockRequest | undefined,
+  ): {
+    frames: PhysicsFrames;
+    impactFrame: number;
+    impact: ThrowImpact;
+    fell: string[];
+    knockSleep?: { seat: Seat; sleepFrame: number; wakeFrame: number };
+  } {
+    const frames = this.newFrames();
+    const last = this.snapshotPoses();
+    const dir = seat === 0 ? 1 : -1;
+    const p = Math.min(1, Math.max(0, power));
+    const speed = item.minSpeed + (item.maxSpeed - item.minSpeed) * p;
+    const rad = (angleDeg * Math.PI) / 180;
+    const vx = Math.cos(rad) * speed * dir,
+      vy = -Math.sin(rad) * speed;
+    const self = this.startKnock({ seat, vx, vy, omega: 0, stayDown: false, speed, away: Math.sign(vx) || dir, leap: true }, frames);
+    const knocks: KnockState[] = [self];
+    let impact: ThrowImpact | null = null;
+    let impactFrame = -1;
+    const hit = new Set<Seat>();
+    const onCollide = (ev: any) => {
+      for (const pair of ev.pairs) {
+        const a = pair.bodyA.parent,
+          b = pair.bodyB.parent;
+        const other = a === self.body ? b : b === self.body ? a : null;
+        if (!other) continue;
+        const m = /^char(\d)$/.exec(other.label ?? '');
+        if (!m) continue;
+        const s = Number(m[1]) as Seat;
+        if (s === seat || hit.has(s)) continue;
+        hit.add(s);
+        const at = pair.collision?.supports?.[0] ?? self.body.position;
+        const v = { x: self.body.velocity.x * 60, y: self.body.velocity.y * 60 };
+        if (!impact) {
+          impact = { kind: 'character', x: r1(at.x), y: r1(at.y), hitSeat: s, bounces: 0 };
+          impactFrame = frames.count;
+        }
+        const req = onHit(s, v, at);
+        if (req) knocks.push(this.startKnock(req, frames));
+      }
+    };
+    Events.on(this.engine, 'collisionStart', onCollide);
+    const fell: string[] = [];
+    let restSteps = 0;
+    try {
+      const maxSteps = Math.ceil((KNOCKBACK.maxTumbleMs + 6000 + Math.max(...this.extraLie)) / STEP_MS);
+      for (let step = 1; step <= maxSteps; step++) {
+        Engine.update(this.engine, STEP_MS);
+        for (const k of knocks) this.stepKnock(k, STEP_MS / 1000);
+        if (self.done && impactFrame < 0) impactFrame = frames.count;
+        if (step % ARENA.frameEvery === 0) {
+          this.record(frames, last);
+          for (const k of knocks) this.recordKnock(k, frames);
+          fell.push(...this.removeFallen(frames));
+        }
+        restSteps = this.allAtRest() && knocks.every((k) => k.done) ? restSteps + 1 : 0;
+        if (restSteps > 24) break;
+      }
+    } finally {
+      Events.off(this.engine, 'collisionStart', onCollide);
+    }
+    for (const k of knocks) {
+      if (k.done) continue;
+      if (k.body && Composite.get(this.engine.world, k.body.id, 'body')) Composite.remove(this.engine.world, k.body);
+      const range = ARENA.characterXRange[k.seat];
+      k.endX = Math.min(range[1], Math.max(range[0], k.body?.position.x ?? k.endX));
+      this.moveCharHidden(k.seat, k.endX);
+      if (!k.stayDown) this.hideChar(k.seat, false);
+      k.done = true;
+      this.releaseWorn(k);
+    }
+    // 最後一格補齊
+    this.record(frames, last);
+    for (const k of knocks) this.recordKnock(k, frames);
+    fell.push(...this.removeFallen(frames));
+    if (impactFrame < 0) impactFrame = Math.max(0, frames.count - 1);
+    const kn = knocks.find((k) => k !== self && k.wakeFrame !== undefined && !k.stayDown);
+    return {
+      frames,
+      impactFrame,
+      impact: impact ?? { kind: 'platform', x: r1(self.endX), y: ARENA.groundY },
+      fell,
+      ...(kn ? { knockSleep: { seat: kn.seat, sleepFrame: kn.sleepFrame ?? 0, wakeFrame: kn.wakeFrame! } } : {}),
+    };
   }
 
   /** 投擲物打中防禦道具時的額外衝量（線速度＋依打點產生的旋轉） */

@@ -724,6 +724,9 @@ export class BattleScene extends Phaser.Scene {
     this.chars[e.seat]?.flash('throw', 450);
     await wait(this, 140); // 出手前的一點點蓄勢
     const proj = this.add.image(start[0], start[1], key).setDepth(46);
+    // 移動：飛出去的是自己，不畫投擲物
+    const leap = item?.kind === 'throwable' && !!item.selfLaunch;
+    if (leap) proj.setVisible(false).setAlpha(0);
     // 出手的咻聲：重的東西比較低沉，越大力越大聲
     const kg = item?.kind === 'throwable' ? item.weightKg ?? 0.5 : 0.5;
     sfx.play(kg >= 0.5 ? 'throwHeavy' : 'throwLight', { vol: 0.5 + e.power * 0.6, rate: kg >= 1 ? 0.85 : 1 });
@@ -777,6 +780,12 @@ export class BattleScene extends Phaser.Scene {
             this.removeDefense(h.uid, ds, 'fade');
           }
         }
+        // 移動：鏡頭跟著自己
+        const me = leap ? e.frames.c?.[String(e.seat) as '0' | '1'] : undefined;
+        if (me && (flying || !knocked || knocked[0] === String(e.seat))) {
+          const f = me[Math.min(k, me.length - 1)];
+          this.director.set({ x: f[0], y: this.director.restY(CAMERA.followZoom), zoom: CAMERA.followZoom, rate: 3.5 });
+        }
         // 命中後鏡頭跟著被打飛的人
         if (!flying && knocked && k > e.impactFrame + 4) {
           const f = knocked[1]![Math.min(k, knocked[1]!.length - 1)];
@@ -807,6 +816,12 @@ export class BattleScene extends Phaser.Scene {
     const direct = e.damages.find((d) => d.source === 'direct');
     const item = getItem(e.itemId);
     const kg = item?.kind === 'throwable' ? item.weightKg ?? 0.3 : 0.3;
+    // 移動：平安落地，只揚起一點灰塵
+    if (item?.kind === 'throwable' && item.selfLaunch && e.impact.kind !== 'character') {
+      puff(this, e.impact.x, ARENA.groundY);
+      sfx.play('bodyThud', { vol: 0.6 });
+      return;
+    }
     // 力道感：越重、傷害越高、爆頭 → 頓越久、鏡頭推越多、晃越大
     const strength = Phaser.Math.Clamp(Math.sqrt(kg) * 0.55 + (direct ? direct.amount / 70 : 0) + (direct?.headshot ? 0.3 : 0), 0, 1);
     // 鏡頭停在命中點附近（不再跟著投擲物）

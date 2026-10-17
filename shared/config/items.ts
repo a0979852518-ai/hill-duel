@@ -79,6 +79,8 @@ export interface ThrowableDef extends ItemBase {
   splashMultiplier: number;
   /** 命中角色（直擊或波及）時附加狀態 */
   onHitStatus?: StatusApply;
+  /** 移動：丟出去的是自己（落地的位置就是新的站位，落在別人身上造成 damage 並把對方推開） */
+  selfLaunch?: boolean;
 }
 
 /**
@@ -337,6 +339,25 @@ export const ITEMS: ItemDef[] = [
     spin: 0.75,
     explosionRadius: 34,
     splashMultiplier: 0.5,
+  },
+  {
+    id: 'move',
+    kind: 'throwable',
+    name: '移動',
+    description: '把自己射出去，換個位置站（最遠約 30 m，可以往前或往後）。落在別人身上造成 10 傷害並把對方推開。',
+    icon: 'assets/items/move.png',
+    placeholder: { shape: 'circle', color: 0xff9800 },
+    tags: ['self'],
+    damage: 10,
+    weightKg: 6,
+    selfLaunch: true,
+    // 最遠約 300 px（30 m）：45° 全力實測約 300（落地會被地面吃掉一點速度）
+    minSpeed: 120,
+    maxSpeed: 625,
+    gravityScale: 1,
+    radius: 20,
+    explosionRadius: 0,
+    splashMultiplier: 0,
   },
   {
     id: 'winston',
