@@ -1,7 +1,7 @@
 // DOM 介面：主選單、等待房間、角色選擇、遊戲結束。
 // 用 HTML 做選單比較好打字、複製房號，也比較適合手機。
 
-import { PLAYABLE_CHARACTERS } from '../../../shared/config/characters.js';
+import { getCharacter, PLAYABLE_CHARACTERS, type CharacterDef } from '../../../shared/config/characters.js';
 import { getItem } from '../../../shared/config/items.js';
 import { ERROR_TEXT, type AiDifficulty, type ErrorCode, type RoomSnapshot, type Seat } from '../../../shared/types.js';
 import { loadName } from '../net/Network.js';
@@ -33,28 +33,33 @@ export function clearUi(): void {
 
 export function showMenu(message?: string): void {
   const el = h(`
-    <div class="panel" data-screen="menu">
+    <div class="panel menu" data-screen="menu">
       <h1 class="title">山丘投擲對決</h1>
       <p class="subtitle">雙人線上・回合制砲擊對戰（也能單挑電腦）</p>
-      <div class="field">
-        <label for="name">你的名字</label>
-        <input id="name" maxlength="12" placeholder="輸入暱稱" value="${esc(loadName())}" />
-      </div>
-      <button class="btn block" data-act="match">隨機匹配對手</button>
-      <div class="divider">或跟朋友玩</div>
-      <button class="btn secondary block" data-act="create">創建房間</button>
-      <div class="divider">或</div>
-      <div class="field">
-        <label for="code">輸入朋友給你的房號</label>
-        <input id="code" class="code" maxlength="6" placeholder="ABC123" autocomplete="off" />
-      </div>
-      <button class="btn secondary block" data-act="join">加入房間</button>
-      <div class="divider">單人對戰電腦</div>
-      <div class="ai-row">
-        <button class="btn ai-btn d-easy" data-ai="easy">弱</button>
-        <button class="btn ai-btn d-normal" data-ai="normal">中</button>
-        <button class="btn ai-btn d-hard" data-ai="hard">強</button>
-        <button class="btn ai-btn d-nightmare" data-ai="nightmare">夢魘</button>
+      <div class="menu-cols">
+        <div class="menu-col">
+          <div class="field">
+            <label for="name">你的名字</label>
+            <input id="name" maxlength="12" placeholder="輸入暱稱" value="${esc(loadName())}" />
+          </div>
+          <button class="btn block big" data-act="match">隨機匹配對手</button>
+          <div class="divider">單人對戰電腦</div>
+          <div class="ai-row">
+            <button class="btn ai-btn d-easy" data-ai="easy">弱</button>
+            <button class="btn ai-btn d-normal" data-ai="normal">中</button>
+            <button class="btn ai-btn d-hard" data-ai="hard">強</button>
+            <button class="btn ai-btn d-nightmare" data-ai="nightmare">夢魘</button>
+          </div>
+        </div>
+        <div class="menu-col">
+          <div class="col-title">跟朋友玩</div>
+          <button class="btn secondary block" data-act="create">創建房間</button>
+          <div class="divider">或輸入房號</div>
+          <div class="join-row">
+            <input id="code" class="code" maxlength="6" placeholder="ABC123" autocomplete="off" aria-label="朋友給你的房號" />
+            <button class="btn secondary" data-act="join">加入</button>
+          </div>
+        </div>
       </div>
       <div class="error" data-err>${message ? esc(message) : ''}</div>
     </div>`);
@@ -220,12 +225,19 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
   let el = ui().querySelector<HTMLElement>('[data-screen=select]');
   if (!el) {
     el = h(`
-      <div class="panel wide" data-screen="select">
-        <h2>選擇角色</h2>
-        <div class="select-status" data-status></div>
-        <div class="char-grid" data-grid></div>
-        <button class="btn block" data-act="confirm">確認角色</button>
-        <div class="error" data-err></div>
+      <div class="panel wide select2" data-screen="select">
+        <div class="sel-head">
+          <h2>選擇角色</h2>
+          <div class="select-status" data-status></div>
+        </div>
+        <div class="sel-body">
+          <div class="char-grid" data-grid></div>
+          <div class="char-detail" data-detail></div>
+        </div>
+        <div class="sel-foot">
+          <div class="error" data-err></div>
+          <button class="btn" data-act="confirm">確認角色</button>
+        </div>
       </div>`);
     const grid = el.querySelector<HTMLElement>('[data-grid]')!;
     for (const c of PLAYABLE_CHARACTERS) {
@@ -234,32 +246,12 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
           <div class="pickers"></div>
           <div class="portrait"></div>
           <div class="cname">${esc(c.name)}</div>
-          <div class="hp">HP ${c.maxHp}</div>
-          <div class="desc">${esc(c.description)}</div>
-          ${c.skills?.length ? `<ul class="skills">${c.skills.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}
-          ${
-            c.exclusiveItems?.length
-              ? `<div class="ex">${c.exclusiveItems
-                  .map((id) => getItem(id))
-                  .filter((i) => i?.icon)
-                  .map((i) => `<img src="${i!.icon}" title="${esc(i!.name)}：${esc(i!.description)}" alt="${esc(i!.name)}">`)
-                  .join('')}</div>`
-              : ''
-          }
         </div>`);
-      const portrait = card.querySelector<HTMLElement>('.portrait')!;
-      const placeholder = () => {
-        portrait.innerHTML = `<div class="ph" style="background:#${hex(c.placeholder.color)};--head:#${hex(c.placeholder.accent)}"></div>`;
-      };
-      const src = c.portrait ?? c.poses?.idle;
-      if (src) {
-        const img = new Image();
-        img.alt = c.name;
-        img.onerror = placeholder;
-        img.src = src;
-        portrait.appendChild(img);
-      } else placeholder();
+      fillPortrait(card.querySelector<HTMLElement>('.portrait')!, c);
+      // 滑鼠移過去先看技能；點下去才選
+      card.addEventListener('pointerenter', () => renderDetail(el!, c.id));
       card.addEventListener('click', async () => {
+        renderDetail(el!, c.id);
         const me = store.snapshot?.players[mySeat];
         if (me?.confirmed) return;
         const res = await store.net.call('char:select', { characterId: c.id });
@@ -267,6 +259,7 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
       });
       grid.appendChild(card);
     }
+    grid.addEventListener('pointerleave', () => renderDetail(el!, store.snapshot?.players[mySeat]?.characterId ?? null));
     const btn = el.querySelector<HTMLButtonElement>('[data-act=confirm]')!;
     btn.addEventListener('click', async () => {
       btn.disabled = true;
@@ -277,10 +270,14 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
       }
     });
     ui().replaceChildren(el);
+    renderDetail(el, snap.players[mySeat]?.characterId ?? PLAYABLE_CHARACTERS[0].id);
   }
 
   // 更新每張卡片上「誰選了」的標記
   const me = snap.players[mySeat];
+  // 自己剛選了別的角色：右邊介紹跟著換
+  if (me?.characterId && el.dataset.picked !== me.characterId) renderDetail(el, me.characterId);
+  el.dataset.picked = me?.characterId ?? '';
   el.querySelectorAll<HTMLElement>('.char-card').forEach((card) => {
     const id = card.dataset.id;
     card.classList.toggle('selected', me?.characterId === id);
@@ -293,15 +290,50 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
   el.querySelector('[data-status]')!.innerHTML = snap.players
     .map((p) =>
       p
-        ? `<div><b>${esc(p.name)}</b>${p.seat === mySeat ? '（你）' : ''}<br>${
-            p.confirmed ? '<span class="ok">✔ 已確認</span>' : p.characterId ? '選擇中…' : '尚未選擇'
+        ? `<div><b>${esc(p.name)}</b>${p.seat === mySeat ? '（你）' : ''}　${
+            p.confirmed ? '<span class="ok">✔ 已確認</span>' : p.characterId ? `選了${esc(getCharacter(p.characterId)?.name ?? '')}` : '選擇中…'
           }${p.connected ? '' : ' <span class="offline">斷線中</span>'}</div>`
         : '<div>等待中</div>',
     )
     .join('');
   const btn = el.querySelector<HTMLButtonElement>('[data-act=confirm]')!;
   btn.disabled = !me?.characterId || !!me?.confirmed;
-  btn.textContent = me?.confirmed ? '等待對手確認…' : '確認角色';
+  btn.textContent = me?.confirmed ? '等待對手確認…' : me?.characterId ? `用 ${getCharacter(me.characterId)?.name ?? ''} 出戰` : '先點一個角色';
+}
+
+function fillPortrait(box: HTMLElement, c: CharacterDef): void {
+  const placeholder = () => {
+    box.innerHTML = `<div class="ph" style="background:#${hex(c.placeholder.color)};--head:#${hex(c.placeholder.accent)}"></div>`;
+  };
+  const src = c.portrait ?? c.poses?.idle;
+  if (!src) return placeholder();
+  const img = new Image();
+  img.alt = c.name;
+  img.onerror = placeholder;
+  img.src = src;
+  box.replaceChildren(img);
+}
+
+/** 右邊的角色介紹：大頭照、血量、技能、專屬卡 */
+function renderDetail(el: HTMLElement, id: string | null): void {
+  const c = getCharacter(id ?? '');
+  const box = el.querySelector<HTMLElement>('[data-detail]')!;
+  if (!c) {
+    box.innerHTML = '<p class="subtitle">點一個角色看技能</p>';
+    return;
+  }
+  if (el.dataset.shown === c.id) return;
+  el.dataset.shown = c.id;
+  const cards = (c.exclusiveItems ?? [])
+    .map((x) => getItem(x))
+    .filter((i) => !!i)
+    .map((i) => `<div class="ex-card">${i!.icon ? `<img src="${i!.icon}" alt="">` : ''}<div><b>${esc(i!.name)}</b><br>${esc(i!.description)}</div></div>`)
+    .join('');
+  box.innerHTML = `
+    <div class="d-head"><div class="d-portrait"></div><div><div class="d-name">${esc(c.name)}</div><div class="d-title">${esc(c.description)}</div><div class="hp">HP ${c.maxHp}</div></div></div>
+    ${c.skills?.length ? `<ul class="skills">${c.skills.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : '<p class="subtitle">沒有特殊技能</p>'}
+    ${cards ? `<div class="d-sub">專屬卡牌</div>${cards}` : ''}`;
+  fillPortrait(box.querySelector<HTMLElement>('.d-portrait')!, c);
 }
 
 function hex(n: number): string {

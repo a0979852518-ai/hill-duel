@@ -32,6 +32,9 @@ export function setupLandscape(game: Phaser.Game): void {
     const root = document.documentElement.style;
     root.setProperty('--app-w', `${rotated ? H : W}px`);
     root.setProperty('--app-h', `${rotated ? W : H}px`);
+    // 給版面用：畫面矮（手機橫向）/ 窄（手機直拿又沒轉）時改用比較緊湊的排版
+    document.body.classList.toggle('short', (rotated ? W : H) < 560);
+    document.body.classList.toggle('narrow', (rotated ? H : W) < 640);
     sm.refresh?.();
   };
 
