@@ -118,11 +118,6 @@ export const SOUNDS: Record<string, Layer[]> = {
     L([0.7, 0.1, 140, 0, 0.02, 0.06, 4, 1, 0, 0, 0, 0, 0, 0.8, 0, 0, 0, 1, 0, 0, -1500], 0.32),
     L([0.6, 0, 880, 0, 0.1, 0.4, 0, 1, 0, 0, 440, 0.08], 0.5),
   ],
-  // 怪誕 bug：數位雜訊＋音高亂跳（像卡帶壞掉）
-  glitch: [
-    L([1, 0.3, 300, 0, 0.25, 0.15, 2, 1, 0, 0, 900, 0.05, 0.04, 2, 0, 0.6]),
-    L([0.7, 0.2, 1400, 0, 0.12, 0.1, 5, 1, -60, 0, -700, 0.06, 0.03, 0, 30, 0.4], 0.18),
-  ],
   status: [L([0.5, 0.05, 400, 0, 0.15, 0.2, 2, 1, -6, 0, 0, 0, 0, 0, 4])],
 };
 
@@ -131,15 +126,14 @@ export const itemHitSound = (itemId: string) => (SOUNDS[`hit_${itemId}`] ? `hit_
 
 // ------------------------------------------------------------ 播放器
 
-/** 玩家設定（記在這台裝置）：音量 0~1、怪誕 bug 開關 */
+/** 玩家設定（記在這台裝置）：音量 0~1 */
 export interface Settings {
   master: number;
   sfx: number;
   music: number;
-  glitches: boolean;
 }
 const SETTINGS_KEY = 'hillduel:settings';
-const DEFAULT_SETTINGS: Settings = { master: 0.8, sfx: 0.8, music: 0.5, glitches: true };
+const DEFAULT_SETTINGS: Settings = { master: 0.8, sfx: 0.8, music: 0.7 };
 
 function loadSettings(): Settings {
   try {
@@ -223,7 +217,8 @@ class Sfx {
     const v = (x: number) => Math.max(0, Math.min(1, x)) ** 2;
     this.master.gain.value = v(this.settings.master) * 1.1;
     this.sfxBus.gain.value = v(this.settings.sfx);
-    this.musicBus.gain.value = v(this.settings.music) * 0.6;
+    // 背景音樂本身合成得比較小聲，這裡放大
+    this.musicBus.gain.value = v(this.settings.music) * 1.6;
   }
 
   get context(): AudioContext | null {

@@ -44,7 +44,7 @@ const DESKTOP_MENU = (message?: string) => `
         <input id="name" maxlength="12" placeholder="輸入暱稱" value="${esc(loadName())}" />
       </div>
       <button class="btn block" data-act="match">隨機匹配對手</button>
-      <button class="btn secondary block settings-btn" data-act="settings">⚙ 設定（音量、怪誕 bug）</button>
+      <button class="btn secondary block settings-btn" data-act="settings">⚙ 設定（音量）</button>
       <div class="divider">或跟朋友玩</div>
       <button class="btn secondary block" data-act="create">創建房間</button>
       <div class="divider">或</div>
