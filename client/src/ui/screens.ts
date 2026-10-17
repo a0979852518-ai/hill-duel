@@ -37,7 +37,7 @@ function isMobile(): boolean {
 
 const DESKTOP_MENU = (message?: string) => `
     <div class="panel" data-screen="menu">
-      <h1 class="title">山丘投擲對決</h1>
+      <h1 class="title">屏大之戰</h1>
       <p class="subtitle">雙人線上・回合制砲擊對戰（也能單挑電腦）</p>
       <div class="field">
         <label for="name">你的名字</label>
@@ -65,7 +65,7 @@ const DESKTOP_MENU = (message?: string) => `
 
 const MOBILE_MENU = (message?: string) => `
     <div class="panel menu" data-screen="menu">
-      <h1 class="title">山丘投擲對決</h1>
+      <h1 class="title">屏大之戰</h1>
       <p class="subtitle">雙人線上・回合制砲擊對戰（也能單挑電腦）</p>
       <div class="menu-cols">
         <div class="menu-col">

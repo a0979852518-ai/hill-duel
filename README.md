@@ -1,4 +1,4 @@
-# 山丘投擲對決（Hill Duel）
+# 屏大之戰
 
 雙人線上、回合制、2D 橫向砲擊對戰網頁遊戲。
 技術：**TypeScript + Phaser 3（前端）＋ Node.js + Socket.IO（後端）**，伺服器是唯一的權威狀態來源。
