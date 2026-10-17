@@ -85,7 +85,33 @@ export class CharacterSprite {
   }
 
   setName(name: string): void {
-    this.tag.setText(name);
+    this.realName = name;
+    if (!this.nameGlitched) this.tag.setText(name);
+  }
+
+  // ------------------------------------------------------------ 怪誕 bug（純視覺，不影響遊戲）
+  private realName = '';
+  private nameGlitched = false;
+
+  /** 名字變亂碼（到下次重設為止） */
+  glitchName(on: boolean): void {
+    this.nameGlitched = on;
+    this.tag.setText(on ? ['▯▯▯ (undefined)', '名字讀取失敗', 'NULL', 'ㄅㄆㄇ亂碼'][(Math.random() * 4) | 0] : this.realName);
+  }
+
+  /** 頭下腳上（到下次重設為止） */
+  glitchUpsideDown(on: boolean): void {
+    this.img.setFlipY(on);
+  }
+
+  /** 模型被拉長又彈回來 */
+  glitchStretch(): void {
+    this.scene.tweens.add({ targets: this.root, scaleX: { from: 1, to: 2.2 }, scaleY: { from: 1, to: 0.6 }, yoyo: true, duration: 260, ease: 'Sine.easeInOut', onComplete: () => this.root.setScale(1) });
+  }
+
+  /** 原地轉一圈（物理引擎抽筋） */
+  glitchSpin(): void {
+    this.scene.tweens.add({ targets: this.root, angle: { from: 0, to: 360 }, duration: 700, ease: 'Cubic.easeInOut', onComplete: () => this.root.setAngle(0) });
   }
 
   /** 直接放到某個位置（快照同步用） */

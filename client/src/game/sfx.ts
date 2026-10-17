@@ -126,23 +126,46 @@ export const itemHitSound = (itemId: string) => (SOUNDS[`hit_${itemId}`] ? `hit_
 
 // ------------------------------------------------------------ 播放器
 
+/** 玩家設定（記在這台裝置）：音量 0~1、怪誕 bug 開關 */
+export interface Settings {
+  master: number;
+  sfx: number;
+  music: number;
+  glitches: boolean;
+}
+const SETTINGS_KEY = 'hillduel:settings';
+const DEFAULT_SETTINGS: Settings = { master: 0.8, sfx: 0.8, music: 0.5, glitches: true };
+
+function loadSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    // 舊版的「靜音」設定
+    if (localStorage.getItem('hillduel:muted') === '1') return { ...DEFAULT_SETTINGS, master: 0 };
+  } catch {
+    /* 沒有 localStorage 就用預設 */
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
 class Sfx {
   private ctx: AudioContext | null = null;
+  /** 總音量 → 音效 / 音樂兩條線 */
   private master: GainNode | null = null;
+  private sfxBus: GainNode | null = null;
+  musicBus: GainNode | null = null;
+  settings: Settings = loadSettings();
   private cache = new Map<string, AudioBuffer[]>();
   private chargeOsc: OscillatorNode | null = null;
   private chargeGain: GainNode | null = null;
-  muted = false;
+  get muted(): boolean {
+    return this.settings.master <= 0 || this.settings.sfx <= 0;
+  }
   private last = new Map<string, number>();
   /** 每個音效播放了幾次（除錯/測試用） */
   readonly played: Record<string, number> = {};
 
   constructor() {
-    try {
-      this.muted = localStorage.getItem('hillduel:muted') === '1';
-    } catch {
-      /* 沒有 localStorage 就預設有聲音 */
-    }
     // 瀏覽器規定要使用者先互動才能出聲：第一次點擊/按鍵時啟動
     const unlock = () => {
       this.ensure();
@@ -158,7 +181,11 @@ class Sfx {
       const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AC();
       this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : 0.55;
+      this.sfxBus = this.ctx.createGain();
+      this.musicBus = this.ctx.createGain();
+      this.sfxBus.connect(this.master);
+      this.musicBus.connect(this.master);
+      this.applyVolumes();
       // 壓縮器：很多聲音同時響（打中＋爆頭＋滾地）時不會爆音
       const comp = this.ctx.createDynamicsCompressor();
       comp.threshold.value = -14;
@@ -170,15 +197,29 @@ class Sfx {
     return this.ctx;
   }
 
-  setMuted(m: boolean): void {
-    this.muted = m;
+  /** 改設定（設定面板呼叫）：立刻套用並存起來 */
+  setSettings(patch: Partial<Settings>): void {
+    this.settings = { ...this.settings, ...patch };
     try {
-      localStorage.setItem('hillduel:muted', m ? '1' : '0');
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
     } catch {
       /* ignore */
     }
-    if (this.master) this.master.gain.value = m ? 0 : 0.55;
-    if (m) this.stopCharge();
+    this.applyVolumes();
+    if (this.muted) this.stopCharge();
+  }
+
+  private applyVolumes(): void {
+    if (!this.master || !this.sfxBus || !this.musicBus) return;
+    // 音量用平方曲線，拉桿中段聽起來比較線性
+    const v = (x: number) => Math.max(0, Math.min(1, x)) ** 2;
+    this.master.gain.value = v(this.settings.master) * 0.7;
+    this.sfxBus.gain.value = v(this.settings.sfx);
+    this.musicBus.gain.value = v(this.settings.music) * 0.35;
+  }
+
+  get context(): AudioContext | null {
+    return this.ctx;
   }
 
   /** 每個聲音先產生 3 個略有差異的版本，播放時隨機挑一個，聽起來比較自然 */
@@ -221,7 +262,7 @@ class Sfx {
       src.playbackRate.value = (opts.rate ?? 1) * (0.97 + Math.random() * 0.06);
       const g = ctx.createGain();
       g.gain.value = Math.min(2, opts.vol ?? 1);
-      src.connect(g).connect(this.master!);
+      src.connect(g).connect(this.sfxBus!);
       src.start(ctx.currentTime + (layer.at ?? 0));
     });
   }
@@ -236,7 +277,7 @@ class Sfx {
       this.chargeOsc.type = 'triangle';
       this.chargeGain = ctx.createGain();
       this.chargeGain.gain.value = 0;
-      this.chargeOsc.connect(this.chargeGain).connect(this.master);
+      this.chargeOsc.connect(this.chargeGain).connect(this.sfxBus!);
       this.chargeOsc.start();
       this.chargeGain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.05);
     }

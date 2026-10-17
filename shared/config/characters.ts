@@ -231,7 +231,7 @@ export const CHARACTERS: CharacterDef[] = [
     bodyScale: 2 / 3,
     traits: {
       outgoingMultiplier: 0.5,
-      outgoingVsChar: { zhenglinze: 2 },
+      outgoingVsChar: { zhenglinze: 1.5 },
       ownItemMultiplier: { maya2026: 4, poopoo: 3 },
       incomingFromChar: { zhenglinze: 0.5 },
       ownItemScale: { poopoo: 2.5 },
@@ -240,7 +240,7 @@ export const CHARACTERS: CharacterDef[] = [
     skills: [
       '人物矮小：身高只有一般角色的 2/3（比較難打中）',
       '初始血量 80，造成的傷害只有 0.5 倍',
-      '對手是鄭霖澤時，傷害倍率改為 2 倍（取代 0.5 倍）',
+      '對手是鄭霖澤時，傷害倍率改為 1.5 倍（取代 0.5 倍）',
       '鄭霖澤打中她的傷害只有 0.5 倍',
       '自己丟的 Maya 2026 傷害 ×4',
       '自己丟的 poopoo恩 傷害 ×3，而且是一般的 2.5 倍大',

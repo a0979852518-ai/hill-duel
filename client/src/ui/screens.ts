@@ -272,6 +272,7 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
         </div>
         <div class="sel-foot">
           <div class="error" data-err></div>
+          <button class="btn secondary" data-act="back">← 返回</button>
           <button class="btn" data-act="confirm">確認角色</button>
         </div>
       </div>`);
@@ -296,6 +297,11 @@ export function showCharacterSelect(snap: RoomSnapshot, mySeat: Seat): void {
       grid.appendChild(card);
     }
     grid.addEventListener('pointerleave', () => renderDetail(el!, store.snapshot?.players[mySeat]?.characterId ?? null));
+    // 返回主選單（離開這個房間；跟電腦的房間會直接關掉）
+    el.querySelector('[data-act=back]')!.addEventListener('click', () => {
+      store.net.leaveRoom();
+      window.dispatchEvent(new CustomEvent('hillduel:left'));
+    });
     const btn = el.querySelector<HTMLButtonElement>('[data-act=confirm]')!;
     btn.addEventListener('click', async () => {
       btn.disabled = true;
@@ -346,7 +352,10 @@ function showCharacterSelectDesktop(snap: RoomSnapshot, mySeat: Seat): void {
         <h2>選擇角色</h2>
         <div class="select-status" data-status></div>
         <div class="char-grid" data-grid></div>
-        <button class="btn block" data-act="confirm">確認角色</button>
+        <div class="sel-actions">
+          <button class="btn secondary" data-act="back">← 返回主選單</button>
+          <button class="btn" data-act="confirm">確認角色</button>
+        </div>
         <div class="error" data-err></div>
       </div>`);
     const grid = el.querySelector<HTMLElement>('[data-grid]')!;
@@ -389,6 +398,11 @@ function showCharacterSelectDesktop(snap: RoomSnapshot, mySeat: Seat): void {
       });
       grid.appendChild(card);
     }
+    // 返回主選單（離開這個房間；跟電腦的房間會直接關掉）
+    el.querySelector('[data-act=back]')!.addEventListener('click', () => {
+      store.net.leaveRoom();
+      window.dispatchEvent(new CustomEvent('hillduel:left'));
+    });
     const btn = el.querySelector<HTMLButtonElement>('[data-act=confirm]')!;
     btn.addEventListener('click', async () => {
       btn.disabled = true;

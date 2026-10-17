@@ -11,26 +11,16 @@ import { store } from './state/store.js';
 import { clearUi, showCharacterSelect, showGameOver, showMenu, showWaiting } from './ui/screens.js';
 import { toast } from './ui/toast.js';
 import { sfx } from './game/sfx.js';
+import { music } from './game/music.js';
+import { setupSettings } from './ui/settings.js';
 import { setupLandscape } from './ui/landscape.js';
 
-// 音效開關（記在這台裝置上）＋所有按鈕的點擊聲
-const muteBtn = document.createElement('button');
-muteBtn.className = 'mute-btn';
-const renderMute = () => {
-  muteBtn.textContent = sfx.muted ? '🔇' : '🔊';
-  muteBtn.title = sfx.muted ? '開啟音效' : '關閉音效';
-};
-renderMute();
-muteBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  sfx.setMuted(!sfx.muted);
-  renderMute();
-  sfx.play('click');
-});
-document.getElementById('app')!.appendChild(muteBtn);
+// 設定（齒輪：音量、怪誕 bug）＋背景音樂＋所有按鈕的點擊聲
+setupSettings();
+music.start();
 document.addEventListener('click', (e) => {
   const el = e.target as HTMLElement | null;
-  if (el && el !== muteBtn && el.closest('button, .char-card')) sfx.play('click');
+  if (el && !el.closest('.gear-btn') && el.closest('button, .char-card')) sfx.play('click');
 });
 
 const net = new Network();

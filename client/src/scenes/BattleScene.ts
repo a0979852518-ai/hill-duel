@@ -9,7 +9,8 @@
 
 import * as Phaser from 'phaser';
 import { AIM_CONFIG, ARENA, CAMERA } from '../../../shared/config/game.js';
-import { getItem, type DefenseDef } from '../../../shared/config/items.js';
+import { getItem, ITEMS, type DefenseDef } from '../../../shared/config/items.js';
+import { glitch, GLITCH_LINES } from './battle/glitches.js';
 import { bodyScaleOf, getCharacter, scaledDefenseSize } from '../../../shared/config/characters.js';
 import { characterHitbox, defenseRect, launchPoint } from '../../../shared/physics.js';
 import {
@@ -345,7 +346,34 @@ export class BattleScene extends Phaser.Scene {
   /** 這次投擲會被打飛的座位（被打飛的人不顯示受傷照，直接接連續動作） */
   private knockedSeats = new Set<Seat>();
 
+  /** 回合開始時偶爾出一個怪誕 bug（純視覺） */
+  private rollTurnGlitch(seat: Seat): void {
+    // 上一回合的 bug 先恢復
+    for (const c of this.chars) {
+      c?.glitchUpsideDown(false);
+      c?.glitchName(false);
+    }
+    if (!glitch(0.12)) return;
+    const c = this.chars[seat];
+    if (!c) return;
+    const x = this.xOf(seat);
+    const pick = (Math.random() * 4) | 0;
+    if (pick === 0) {
+      c.glitchUpsideDown(true);
+      floatingText(this, x, ARENA.groundY - 220, '重力反轉？', '#e1bee7');
+    } else if (pick === 1) {
+      c.glitchName(true);
+    } else if (pick === 2) {
+      this.time.delayedCall(600, () => c.glitchSpin());
+      floatingText(this, x, ARENA.groundY - 220, '物理引擎抽筋', '#e1bee7');
+    } else toast(GLITCH_LINES[(Math.random() * 3) | 0]);
+  }
+
   private hitCharacter(seat: Seat, strong = false): void {
+    if (glitch(0.06)) {
+      this.chars[seat]?.glitchStretch();
+      floatingText(this, this.xOf(seat), ARENA.groundY - 250, '模型拉伸', '#e1bee7');
+    }
     if (this.knockedSeats.has(seat)) this.chars[seat]?.hitFlash();
     else this.chars[seat]?.hurt(strong);
   }
@@ -401,6 +429,7 @@ export class BattleScene extends Phaser.Scene {
           const name = store.snapshot?.players[e.seat]?.name ?? '';
           this.focusSeat(e.seat);
           sfx.play('turnStart');
+          this.rollTurnGlitch(e.seat);
           banner(this.ui, e.seat === mySeat ? '輪到你了！' : `輪到 ${name}`, e.seat === 0 ? 0x3d7bd8 : 0xd8463d, 800);
           await wait(this, 450);
           for (const d of e.statusDamage) {
@@ -539,6 +568,8 @@ export class BattleScene extends Phaser.Scene {
         if (d.headshot) sfx.play('headshot');
       } else if (d.source === 'status') sfx.play('oof', { vol: 0.5, rate: 1.1 });
       const critTag = d.crit ? '爆擊！' : '';
+      // 怪誕 bug：傷害數字先跳一個 NaN
+      if (d.amount > 0 && glitch(0.05)) floatingText(this, this.xOf(d.seat) + 60, ARENA.groundY - 200, '-NaN', '#bdbdbd');
       damageNumber(
         this,
         this.xOf(d.seat),
@@ -739,6 +770,8 @@ export class BattleScene extends Phaser.Scene {
     const reasons: Record<string, DefenseUpdate> = {};
     for (const u of e.defenseUpdates) reasons[u.uid] = u;
     let flying = true;
+    const texGlitch = glitch(0.07);
+    let texSwapped = false;
     const knocked = Object.entries(e.frames.c ?? {})[0];
     this.knockedSeats = new Set(Object.keys(e.frames.c ?? {}).map((k) => Number(k) as Seat));
     await this.playFrames(e.frames, {
@@ -747,6 +780,17 @@ export class BattleScene extends Phaser.Scene {
       reasons,
       onProj: (x, y, vx, vy) => {
         if (!flying) return;
+        // 怪誕 bug：飛到一半貼圖讀錯，變成別的道具
+        if (texGlitch && !texSwapped && y < ARENA.groundY - 350) {
+          texSwapped = true;
+          const others = ITEMS.filter((i) => i.enabled !== false && i.icon && i.id !== e.itemId);
+          const other = others[(Math.random() * others.length) | 0];
+          if (other && this.textures.exists(iconKey(other.id))) {
+            proj.setTexture(iconKey(other.id));
+            fitInto(proj, 48);
+            floatingText(this, x, y - 50, '貼圖讀錯了', '#e1bee7');
+          }
+        }
         this.director.follow(x, y, vx, vy);
         this.speedLines.set(vx, vy, Math.hypot(vx, vy));
       },
