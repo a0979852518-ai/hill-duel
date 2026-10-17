@@ -14,6 +14,8 @@ export function isRotated(): boolean {
 export function setupLandscape(game: Phaser.Game): void {
   const app = document.getElementById('app')!;
   const touch = matchMedia('(pointer: coarse)').matches;
+  // 手機專用的排版（style.css 的 body.mobile）
+  document.body.classList.toggle('mobile', touch);
   const sm = game.scale as any;
 
   const apply = () => {
