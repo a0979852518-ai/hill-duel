@@ -292,14 +292,14 @@ export const CHARACTERS: CharacterDef[] = [
     },
     knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/panbohan/knock${i}.png`),
     traits: {
-      knockdownDamage: 8,
+      knockdownDamage: 10,
       statusReplace: { smoke: 'smokeHeal' },
       drawReplace: { cigarette: 'winston' },
       defenseExtraHits: { helmet: 1 },
     },
     skills: [
       '初始血量 110',
-      '年邁：已經 23 歲，膝蓋和腰不好，被打飛倒地時額外扣 8 血',
+      '年邁：已經 23 歲，膝蓋和腰不好，被打飛倒地時額外扣 10 血',
       '軍人：自己放的得咖咪咪的鋼盔可以多擋 1 次（2 → 3）',
       '抽菸：被大哥的香菸打中，二手菸改成每回合回 1 血（不疊加）',
       '菸癮大：抽到大哥的香菸會直接升級成「Winston 一條」（傷害 20，對方每回合扣 3 血）',
