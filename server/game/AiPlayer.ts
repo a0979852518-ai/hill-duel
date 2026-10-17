@@ -13,7 +13,7 @@ import { headLineY } from '../../shared/physics.js';
 import { itemScaleFor } from '../../shared/config/characters.js';
 import { sideDir, teamOf, type AiDifficulty, type Seat } from '../../shared/types.js';
 import type { Battle } from './Battle.js';
-import { validatePlacement } from './DefenseSystem.js';
+import { defenseForSeat, validatePlacement } from './DefenseSystem.js';
 
 interface DifficultyProfile {
   label: string;
@@ -339,8 +339,10 @@ export class AiPlayer {
   // ------------------------------------------------------------ 放防禦道具
 
   private doPlace(turnId: number): void {
-    const def = getItem(this.battle.turnView().chosenItemId ?? '') as DefenseDef | undefined;
-    if (!def || def.kind !== 'defense') return;
+    const raw = getItem(this.battle.turnView().chosenItemId ?? '') as DefenseDef | undefined;
+    if (!raw || raw.kind !== 'defense') return;
+    // 角色技能 / 羈絆會改變大小（回收堆 2 倍）：用實際大小找位置
+    const def = defenseForSeat(this.battle.state, this.seat, raw);
     const st = this.battle.state;
     const x0 = st.physics.getCharX(this.seat);
     const dir = sideDir(this.seat);
@@ -355,7 +357,7 @@ export class AiPlayer {
     // 都放不下（例如隊友站在那裡）：在前方隨便找個空地
     for (let i = 0; i < 40; i++) cands.push([x0 + dir * (100 + Math.random() * 700), G - def.size.h / 2 - 2]);
     for (const [x, y] of cands) {
-      if (!validatePlacement(st, this.seat, def, Math.round(x), Math.round(y))) {
+      if (!validatePlacement(st, this.seat, raw, Math.round(x), Math.round(y))) {
         this.battle.placeDefense(this.seat, turnId, Math.round(x), Math.round(y));
         return;
       }

@@ -10,7 +10,7 @@
 import * as Phaser from 'phaser';
 import { AIM_CONFIG, ARENA, CAMERA } from '../../../shared/config/game.js';
 import { BOND_CARRY, getItem, itemTargetsEnemy, type DefenseDef } from '../../../shared/config/items.js';
-import { bodyScaleOf, getCharacter, scaledDefenseSize } from '../../../shared/config/characters.js';
+import { bodyScaleOf, defenseSizeFor, getCharacter } from '../../../shared/config/characters.js';
 import { characterHitbox, defenseRect, launchPoint, startXOf } from '../../../shared/physics.js';
 import {
   ERROR_TEXT,
@@ -648,6 +648,8 @@ export class BattleScene extends Phaser.Scene {
       onFrame?: (i: number) => void;
       /** 投擲物每次更新位置（世界座標、速度 px/s） */
       onProj?: (x: number, y: number, vx: number, vy: number) => void;
+      /** 每次更新（v = 目前播到第幾格，含小數） */
+      onTick?: (v: number) => void;
       reasons?: Record<string, DefenseUpdate>;
     },
   ): Promise<void> {
@@ -752,6 +754,7 @@ export class BattleScene extends Phaser.Scene {
               }
             } else opts.proj.setVisible(false);
           }
+          opts.onTick?.(v);
           fire(Math.floor(v));
         },
         onComplete: () => {
@@ -813,12 +816,52 @@ export class BattleScene extends Phaser.Scene {
     const reasons: Record<string, DefenseUpdate> = {};
     for (const u of e.defenseUpdates) reasons[u.uid] = u;
     let flying = true;
+    // 垃圾袋爆開的小 poopoo恩
+    const cluster = item?.kind === 'throwable' && item.cluster ? item.cluster : null;
+    const pieceSprites: Phaser.GameObjects.Image[] = [];
+    if (cluster && e.frames.m) {
+      const pieceItem = getItem(cluster.piece);
+      const pkey = this.textures.exists(projKey(cluster.piece)) ? projKey(cluster.piece) : iconKey(cluster.piece);
+      // 畫面上畫大一點比較看得清楚（碰撞還是小的）
+      const size = (pieceItem?.kind === 'throwable' ? pieceItem.displaySize ?? Math.max(32, pieceItem.radius * 3.4) : 32) * cluster.pieceScale * 1.4;
+      for (let i = 0; i < e.frames.m.length; i++) {
+        const img = this.add.image(0, 0, pkey).setDepth(46).setVisible(false);
+        fitInto(img, size);
+        pieceSprites.push(img);
+      }
+    }
+    const tickPieces = (v: number) => {
+      if (!e.frames.m) return;
+      let sx = 0,
+        sy = 0,
+        n = 0;
+      e.frames.m.forEach((m, i) => {
+        const img = pieceSprites[i];
+        const t = v - m.s;
+        if (!img || t < 0 || t > m.p.length - 1) {
+          img?.setVisible(false);
+          return;
+        }
+        const a = m.p[Math.floor(t)],
+          b = m.p[Math.min(m.p.length - 1, Math.floor(t) + 1)];
+        const f = t - Math.floor(t);
+        const x = a[0] + (b[0] - a[0]) * f,
+          y = a[1] + (b[1] - a[1]) * f;
+        img.setPosition(x, y).setRotation(a[2]).setVisible(true);
+        sx += x;
+        sy += y;
+        n++;
+      });
+      // 鏡頭跟著碎片群
+      if (n > 0) this.director.follow(sx / n, sy / n, 0, 0);
+    };
     const knocked = Object.entries(e.frames.c ?? {})[0];
     this.knockedSeats = new Set(Object.keys(e.frames.c ?? {}).map((k) => Number(k) as Seat));
     await this.playFrames(e.frames, {
       proj,
       trail,
       reasons,
+      onTick: cluster ? tickPieces : undefined,
       onProj: (x, y, vx, vy) => {
         if (!flying) return;
         this.director.follow(x, y, vx, vy);
@@ -864,6 +907,15 @@ export class BattleScene extends Phaser.Scene {
         if (k !== e.impactFrame) return;
         flying = false;
         this.speedLines.stop();
+        // 垃圾袋：在空中爆開（碎片自己的命中在 onFrame 處理）
+        if (cluster) {
+          proj.setVisible(false).setAlpha(0);
+          puff(this, e.impact.x, e.impact.y);
+          void explosion(this, e.impact.x, e.impact.y, 40);
+          sfx.play('hit_poopoo' in SOUNDS ? 'hit_poopoo' : 'punch', { vol: 0.8 });
+          floatingText(this, e.impact.x, e.impact.y - 40, '爆開！', '#cddc39');
+          return;
+        }
         // 黏住了：投擲物本身消失，換成黏在身上的那坨
         if (e.stuck) {
           proj.setAlpha(0);
@@ -875,6 +927,11 @@ export class BattleScene extends Phaser.Scene {
     this.speedLines.stop();
     this.knockedSeats.clear();
     proj.destroy();
+    pieceSprites.forEach((p) => p.destroy());
+    if (cluster) {
+      this.director.stopFollow();
+      if (e.damages.length === 0) floatingText(this, e.impact.x, ARENA.groundY - 120, '全部沒打中', '#ffffff');
+    }
     if (carried) {
       this.chars[carried.seat]?.placeAt(carried.endX);
       this.chars[carried.seat]?.setVisible(true);
@@ -1047,7 +1104,17 @@ export class BattleScene extends Phaser.Scene {
             t.activeSeat,
             this.xOf(t.activeSeat),
             // 捲毛的回收紙箱比較大
-            { ...item, size: scaledDefenseSize(item.size, item.id, snap.players[t.activeSeat]?.characterId) },
+            {
+              ...item,
+              size: defenseSizeFor(
+                item.size,
+                item.id,
+                t.activeSeat,
+                snap.mode,
+                snap.players.map((p) => p?.characterId),
+                snap.players.map((p) => (p?.hp ?? 0) > 0),
+              ),
+            },
             mine,
             snap.defenses,
             defKey(item.id),

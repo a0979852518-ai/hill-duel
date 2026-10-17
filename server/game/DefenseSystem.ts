@@ -1,6 +1,6 @@
 // 防禦系統：放置合法性檢查與建立防禦道具（真實物理：從放手位置掉下來堆疊）。
 
-import { scaledDefenseSize } from '../../shared/config/characters.js';
+import { defenseSizeFor } from '../../shared/config/characters.js';
 import type { DefenseDef } from '../../shared/config/items.js';
 import { placementZone } from '../../shared/physics.js';
 import type { ErrorCode, Seat } from '../../shared/types.js';
@@ -14,7 +14,7 @@ export function canPlaceMore(state: BattleState, seat: Seat, def: DefenseDef): b
 
 /** 依放置者的角色調整防禦道具大小（捲毛的回收紙箱比較大） */
 export function defenseForSeat(state: BattleState, seat: Seat, def: DefenseDef): DefenseDef {
-  const size = scaledDefenseSize(def.size, def.id, state.characterIds[seat]);
+  const size = defenseSizeFor(def.size, def.id, seat, state.mode, state.characterIds, state.fighters.map((f) => f.hp > 0));
   return size === def.size ? def : { ...def, size };
 }
 

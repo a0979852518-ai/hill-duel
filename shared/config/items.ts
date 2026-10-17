@@ -38,10 +38,10 @@ interface ItemBase {
   exclusiveTo?: string[];
   /** 對手是這些角色時抽不到（角色 id） */
   notVs?: string[];
-  /** 羈絆卡：2v2 時鄭霖澤和連恩同隊（而且都活著）才抽得到 */
-  bondOnly?: boolean;
-  /** 羈絆成立時抽不到（被羈絆卡取代的專屬卡） */
-  notInBond?: boolean;
+  /** 羈絆卡：2v2 時這組羈絆成立（兩人同隊而且都活著）才抽得到，只有羈絆成員抽得到 */
+  bondOnly?: 'zhengLianen' | 'juanZhu';
+  /** 這組羈絆成立時抽不到（被羈絆卡取代的專屬卡） */
+  notInBond?: 'zhengLianen' | 'juanZhu';
 }
 
 /** 命中時附加的狀態效果 */
@@ -85,6 +85,8 @@ export interface ThrowableDef extends ItemBase {
   onHitStatus?: StatusApply;
   /** 移動：丟出去的是自己（落地的位置就是新的站位，落在別人身上造成 damage 並把對方推開） */
   selfLaunch?: boolean;
+  /** 在空中爆開成很多小碎片（垃圾袋 → 小 poopoo恩），每個碎片命中造成 damage */
+  cluster?: { count: number; piece: string; pieceScale: number };
 }
 
 /**
@@ -328,7 +330,7 @@ export const ITEMS: ItemDef[] = [
     placeholder: { shape: 'rect', color: 0x555555 },
     exclusiveTo: ['zhenglinze'],
     notVs: ['lianen'],
-    notInBond: true,
+    notInBond: 'zhengLianen',
     tags: ['heavy'],
     damage: 25,
     // 一個人：很重，擊退很強
@@ -375,7 +377,7 @@ export const ITEMS: ItemDef[] = [
     sprite: 'assets/items/lianen_throw.png',
     placeholder: { shape: 'rect', color: 0x555555 },
     exclusiveTo: ['zhenglinze', 'lianen'],
-    bondOnly: true,
+    bondOnly: 'zhengLianen',
     tags: ['heavy'],
     damage: 50,
     weightKg: 40,
@@ -388,6 +390,30 @@ export const ITEMS: ItemDef[] = [
     spin: 0.75,
     explosionRadius: 0,
     splashMultiplier: 0,
+  },
+  {
+    id: 'garbageBag',
+    kind: 'throwable',
+    name: '垃圾袋',
+    description: '羈絆卡（2v2 捲毛＋竹竿同隊）。丟出去後在空中爆開，撒出 7 坨小 poopoo恩，照慣性散開像流星雨一樣砸下去，每坨傷害 8。',
+    icon: 'assets/items/garbage_bag.png',
+    sprite: 'assets/items/garbage_bag.png',
+    placeholder: { shape: 'circle', color: 0x222222 },
+    exclusiveTo: ['juanmao', 'zhugan'],
+    bondOnly: 'juanZhu',
+    tags: ['light'],
+    damage: 8,
+    weightKg: 3,
+    frictionAir: 0.0003,
+    minSpeed: 380,
+    maxSpeed: 2150,
+    gravityScale: 1,
+    radius: 18,
+    displaySize: 64,
+    spin: 0.15,
+    explosionRadius: 0,
+    splashMultiplier: 0,
+    cluster: { count: 7, piece: 'poopoo', pieceScale: 0.6 },
   },
   {
     id: 'winston',
@@ -546,7 +572,7 @@ export const ITEMS: ItemDef[] = [
     sprite: 'assets/items/zheng_guard.png',
     placeholder: { shape: 'rect', color: 0xbdb6aa },
     exclusiveTo: ['lianen'],
-    notInBond: true,
+    notInBond: 'zhengLianen',
     notVs: ['zhenglinze'],
     // 跟一般角色一樣高
     size: { w: 64, h: 150 },

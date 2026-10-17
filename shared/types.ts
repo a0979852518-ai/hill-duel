@@ -121,6 +121,8 @@ export interface PhysicsFrames {
   p?: [number, number, number][];
   d: Record<string, [number, number, number][]>;
   gone: Record<string, number>;
+  /** 爆開的碎片（垃圾袋的小 poopoo恩）：每一個從第 s 格開始，p = [x, y, 角度][] */
+  m?: { s: number; p: [number, number, number][] }[];
   /** 被擊退的角色：座位 → [腳底x, 腳底y-地面, 傾斜角, 身體翻面(1~-1), 連續動作圖(0=一般, 1~5)][]（只有會動的才會出現） */
   c?: Partial<Record<string, [number, number, number, number, number][]>>;
 }

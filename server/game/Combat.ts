@@ -16,6 +16,7 @@ export const HEADSHOT_MULTIPLIER = 1.5;
 
 export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef, angle: number, power: number): ThrowEvent {
   if (item.selfLaunch) return resolveLeap(state, seat, item, angle, power);
+  if (item.cluster) return resolveCluster(state, seat, item, angle, power);
   // 羈絆卡：不管誰出這張牌，都是鄭霖澤把連恩丟出去
   const user = seat;
   const bond = item.id === BOND_CARRY.item ? state.bond(teamOf(seat)) : null;
@@ -239,6 +240,73 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
     ...(sleepFrames.length ? { sleepFrames } : {}),
     ...(hu ? { hu } : {}),
     ...(stuck ? { stuck } : {}),
+  };
+}
+
+/** 垃圾袋：在空中爆開成很多小 poopoo恩，每坨各自命中（傷害在打到的那一格顯示） */
+function resolveCluster(state: BattleState, seat: Seat, item: ThrowableDef, angle: number, power: number): ThrowEvent {
+  const damages: DamageEntry[] = [];
+  const defenseUpdates: DefenseUpdate[] = [];
+  const destroyed: string[] = [];
+  const piece = getItem(item.cluster!.piece);
+  const scale = item.cluster!.pieceScale;
+  const radius = (piece?.kind === 'throwable' ? piece.radius : 12) * scale;
+  let hitEnemy = false;
+  const sim = state.physics.throwCluster(seat, item, angle, power, radius, (impact, frame) => {
+    if (impact.kind === 'character' && impact.hitSeat !== undefined) {
+      const t = impact.hitSeat;
+      if (state.fighters[t].hp <= 0) return;
+      const e = state.dealDamage(t, item.damage, 'direct', seat, undefined, item.id);
+      if (e) {
+        e.frame = frame;
+        if (t === seat) e.self = true;
+        else if (teamOf(t) === teamOf(seat)) e.ally = true;
+        damages.push(e);
+      }
+      if (teamOf(t) !== teamOf(seat)) hitEnemy = true;
+      // 小 poopoo恩 黏在身上（純裝飾）
+      if (state.fighters[t].hp > 0) state.stick(t, item.cluster!.piece, impact.x, impact.y, state.physics.getCharX(t), scale);
+    } else if (impact.kind === 'defense' && impact.defenseUid) {
+      const upd = state.hitDefense(impact.defenseUid, item.damage);
+      if (upd) {
+        defenseUpdates.push(upd);
+        if (upd.destroyed) destroyed.push(upd.uid);
+      }
+    }
+  });
+  for (const uid of destroyed) {
+    sim.frames.gone[uid] = Math.max(0, sim.frames.count - 1);
+    state.physics.removeDefense(uid);
+  }
+  // 竹竿：有打中敵人就算連中
+  const reward = state.traits(seat).streakReward;
+  let hu = false;
+  if (reward) {
+    const f = state.fighters[seat];
+    f.hitStreak = hitEnemy ? (f.hitStreak ?? 0) + 1 : 0;
+    if (f.hitStreak >= reward.hits) {
+      f.hitStreak = 0;
+      f.huReady = true;
+      hu = true;
+    }
+  }
+  defenseUpdates.push(...state.dropFallen(sim.fell));
+  state.syncPoses();
+  return {
+    type: 'throw',
+    seat,
+    itemId: item.id,
+    angle,
+    power,
+    frames: sim.frames,
+    impactFrame: sim.burstFrame,
+    impact: { x: sim.burst.x, y: sim.burst.y, kind: 'platform' },
+    explosionRadius: 0,
+    damages,
+    defenseUpdates,
+    statusApplied: null,
+    bounceFrames: [],
+    ...(hu ? { hu } : {}),
   };
 }
 

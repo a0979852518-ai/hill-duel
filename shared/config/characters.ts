@@ -211,7 +211,9 @@ export const CHARACTERS: CharacterDef[] = [
       '自己丟的快煮鍋直接命中（沒彈地）會爆擊：傷害 ×1.5',
       '自己放的回收紙箱面積 1.5 倍',
       '弱點：機車鎖彈地後打到他，效果照樣觸發（一般彈地後效果不算）',
+      '羈絆（2v2 捲毛＋竹竿同隊）：兩人都抽得到「垃圾袋」（空中爆開成 7 坨小 poopoo恩，像流星雨砸下去，每坨傷害 8）；兩人放的回收堆是原本的 2 倍大',
     ],
+    exclusiveItems: ['garbageBag'],
     placeholder: { color: 0xffffff, accent: 0xf1d3b8 },
   },
   {
@@ -278,8 +280,9 @@ export const CHARACTERS: CharacterDef[] = [
       '睡眠：被打飛倒地後會多躺 3 秒才爬起來，睡飽回復 5 血',
       '胡牌：投擲連續 3 次打中對手就「胡」，下次抽牌必出專屬武器「麻將」（傷害 69）；丟沒打中連擊就歸零',
       '專屬卡牌「原神 1:1 手辦」：跟人一樣高的掩體，擋 1 次攻擊；每被摧毀一個，竹竿氣到傷害永久 +0.15',
+      '羈絆（2v2 捲毛＋竹竿同隊）：兩人都抽得到「垃圾袋」（空中爆開成 7 坨小 poopoo恩，像流星雨砸下去，每坨傷害 8）；兩人放的回收堆是原本的 2 倍大',
     ],
-    exclusiveItems: ['mahjong', 'genshinFigure'],
+    exclusiveItems: ['mahjong', 'genshinFigure', 'garbageBag'],
     placeholder: { color: 0xffffff, accent: 0xf1d3b8 },
   },
   {
@@ -355,4 +358,44 @@ export function traitsOf(id: string | null | undefined): CharacterTraits {
 export function scaledDefenseSize(size: { w: number; h: number }, itemId: string, characterId: string | null | undefined): { w: number; h: number } {
   const s = traitsOf(characterId).defenseScale?.[itemId] ?? 1;
   return s === 1 ? size : { w: Math.round(size.w * s), h: Math.round(size.h * s) };
+}
+
+// ------------------------------------------------------------ 2v2 羈絆
+export type BondId = 'zhengLianen' | 'juanZhu';
+/** 每組羈絆的兩個成員（角色 id） */
+export const BOND_MEMBERS: Record<BondId, [string, string]> = {
+  zhengLianen: ['zhenglinze', 'lianen'],
+  juanZhu: ['juanmao', 'zhugan'],
+};
+/** 羈絆成立時，成員放的防禦道具大小倍率（長、寬各乘） */
+export const BOND_DEFENSE_SCALE: Partial<Record<BondId, Record<string, number>>> = {
+  juanZhu: { recyclePile: 2 },
+};
+
+/**
+ * 這個座位現在有沒有這組羈絆：2v2、同隊兩個成員都在而且都活著、自己是其中一個。
+ * ids / alive 依座位排。
+ */
+export function inBond(bond: BondId, seat: number, mode: string | undefined, ids: (string | null | undefined)[], alive: boolean[]): boolean {
+  if (mode !== 'team') return false;
+  const [a, b] = BOND_MEMBERS[bond];
+  if (!alive[seat] || (ids[seat] !== a && ids[seat] !== b)) return false;
+  const mates = ids.map((id, i) => ({ id, i })).filter((x) => x.i % 2 === seat % 2 && alive[x.i]);
+  return mates.some((x) => x.id === a) && mates.some((x) => x.id === b);
+}
+
+/** 防禦道具大小：角色技能（捲毛的回收堆 1.5 倍面積）＋羈絆（捲毛＋竹竿：回收堆 2 倍大，取代角色技能） */
+export function defenseSizeFor(
+  size: { w: number; h: number },
+  itemId: string,
+  seat: number,
+  mode: string | undefined,
+  ids: (string | null | undefined)[],
+  alive: boolean[],
+): { w: number; h: number } {
+  for (const bond of Object.keys(BOND_DEFENSE_SCALE) as BondId[]) {
+    const k = BOND_DEFENSE_SCALE[bond]?.[itemId];
+    if (k && inBond(bond, seat, mode, ids, alive)) return { w: Math.round(size.w * k), h: Math.round(size.h * k) };
+  }
+  return scaledDefenseSize(size, itemId, ids[seat]);
 }

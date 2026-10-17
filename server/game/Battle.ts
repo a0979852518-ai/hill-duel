@@ -274,10 +274,8 @@ export class Battle {
     // 對上某些角色時抽不到（鄭霖澤的「連恩」遇到連恩本人）
     if (this.state.enemiesOf(seat).some((e) => item.notVs?.includes(this.state.characterIds[e] ?? ''))) return false;
     // 2v2 羈絆（鄭霖澤＋連恩同隊）：羈絆卡只有這時候抽得到；被取代的專屬卡抽不到
-    const bond = this.state.bond(teamOf(seat));
-    const inBond = !!bond && (bond.thrower === seat || bond.carried === seat);
-    if (item.bondOnly && !inBond) return false;
-    if (item.notInBond && inBond) return false;
+    if (item.bondOnly && !this.state.inBond(item.bondOnly, seat)) return false;
+    if (item.notInBond && this.state.inBond(item.notInBond, seat)) return false;
     if (item.kind === 'defense') return canPlaceMore(this.state, seat, item);
     if (item.kind === 'functional') {
       const h = getHandler(item.handler);

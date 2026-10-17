@@ -1033,6 +1033,127 @@ export class PhysicsWorld {
     };
   }
 
+  /**
+   * 會在空中爆開的投擲物（垃圾袋）：飛到最高點（或先撞到東西）就爆開，撒出 count 個小碎片，
+   * 碎片照原本的速度往前散開，各自第一次碰到人 / 防禦道具 / 地面就算命中然後消失。
+   * @param onPiece 每個碎片命中時呼叫（frame = 第幾格）
+   */
+  throwCluster(
+    seat: Seat,
+    item: ThrowableDef,
+    angleDeg: number,
+    power: number,
+    pieceRadius: number,
+    onPiece: (impact: ThrowImpact, frame: number, vel: { x: number; y: number }) => void,
+    rng: () => number = Math.random,
+  ): { frames: PhysicsFrames; burstFrame: number; burst: { x: number; y: number }; fell: string[] } {
+    const frames = this.newFrames();
+    const last = this.snapshotPoses();
+    const G = ARENA.groundY;
+    const dir = sideDir(seat);
+    const lp = launchPoint(seat, this.charX[seat], this.cs[seat], angleDeg);
+    const p = Math.min(1, Math.max(0, power));
+    const speed = item.minSpeed + (item.maxSpeed - item.minSpeed) * p;
+    const rad = (angleDeg * Math.PI) / 180;
+    const enemyDefs = defCat(1 - teamOf(seat));
+    const bag = Bodies.circle(lp.x, lp.y, item.radius, {
+      ...PHYSICS.projectile,
+      frictionAir: item.frictionAir ?? PHYSICS.projectile.frictionAir,
+      label: 'proj',
+      collisionFilter: { category: CAT.proj, mask: CAT.world | (ALL_CHARS & ~charCat(seat)) | enemyDefs },
+    });
+    Body.setVelocity(bag, { x: (Math.cos(rad) * speed * dir) / 60, y: (-Math.sin(rad) * speed) / 60 });
+    Body.setAngularVelocity(bag, (item.spin ?? 0.25) * dir);
+    Composite.add(this.engine.world, bag);
+    let bagHit = false;
+    const pieces: { body: any; rec: { s: number; p: [number, number, number][] }; done: boolean }[] = [];
+    const onCollide = (ev: any) => {
+      for (const pair of ev.pairs) {
+        const a = pair.bodyA.parent,
+          b = pair.bodyB.parent;
+        if (a === bag || b === bag) {
+          bagHit = true;
+          continue;
+        }
+        const pc = pieces.find((x) => !x.done && (x.body === a || x.body === b));
+        if (!pc) continue;
+        const other = pc.body === a ? b : a;
+        const label: string = other.label ?? '';
+        const contact = pair.collision?.supports?.[0] ?? pc.body.position;
+        const vel = { x: pc.body.velocity.x * 60, y: pc.body.velocity.y * 60 };
+        let impact: ThrowImpact;
+        if (label.startsWith('def:')) impact = { kind: 'defense', x: r1(contact.x), y: r1(contact.y), defenseUid: label.slice(4), bounces: 0 };
+        else if (/^char\d$/.test(label)) impact = { kind: 'character', x: r1(contact.x), y: r1(contact.y), hitSeat: Number(label.slice(4)) as Seat, bounces: 0 };
+        else impact = { kind: 'platform', x: r1(contact.x), y: r1(contact.y) };
+        pc.done = true;
+        onPiece(impact, frames.count, vel);
+      }
+    };
+    Events.on(this.engine, 'collisionStart', onCollide);
+    let burstFrame = -1;
+    let burst = { x: lp.x, y: lp.y };
+    const fell: string[] = [];
+    let step = 0;
+    let rest = 0;
+    const maxSteps = Math.ceil((ARENA.maxFlightSeconds * 1000 + PHYSICS.settleMaxMs) / STEP_MS);
+    try {
+      while (step < maxSteps) {
+        if (burstFrame < 0) {
+          const vy = bag.velocity.y;
+          // 飛到最高點（開始往下掉）或撞到東西就爆開；至少飛 0.25 秒
+          if (bagHit || (vy >= 0 && step * STEP_MS > 250) || bag.position.y > G - 20) {
+            burstFrame = frames.count;
+            burst = { x: r1(bag.position.x), y: r1(bag.position.y) };
+            const v0 = { x: bag.velocity.x, y: bag.velocity.y };
+            Composite.remove(this.engine.world, bag);
+            const n = item.cluster?.count ?? 6;
+            for (let i = 0; i < n; i++) {
+              // 照慣性往前散開：水平速度 80%~112%，垂直方向稍微往上下灑開
+              const f = 0.8 + (0.32 * (i + rng())) / n;
+              const body = Bodies.circle(bag.position.x + (rng() - 0.5) * 16, bag.position.y + (rng() - 0.5) * 16, pieceRadius, {
+                ...PHYSICS.projectile,
+                frictionAir: 0.0006,
+                label: 'piece',
+                collisionFilter: { category: CAT.proj, mask: CAT.world | ALL_CHARS | enemyDefs },
+              });
+              Body.setVelocity(body, { x: v0.x * f + (rng() - 0.5) * 0.8, y: v0.y * (0.6 + rng() * 0.4) - 0.5 - rng() * 2 });
+              Body.setAngularVelocity(body, (rng() - 0.5) * 0.6);
+              Composite.add(this.engine.world, body);
+              pieces.push({ body, rec: { s: frames.count, p: [] }, done: false });
+            }
+          }
+        }
+        Engine.update(this.engine, STEP_MS);
+        step++;
+        for (const pc of pieces) {
+          if (pc.done && pc.body) {
+            Composite.remove(this.engine.world, pc.body);
+          } else if (!pc.done && (pc.body.position.y > G + 200 || Math.abs(pc.body.position.x - burst.x) > 6000)) {
+            pc.done = true;
+            Composite.remove(this.engine.world, pc.body);
+          }
+        }
+        if (step % ARENA.frameEvery === 0) {
+          this.record(frames, last, burstFrame < 0 ? bag : undefined);
+          for (const pc of pieces) if (!pc.done || pc.rec.p.length < frames.count - pc.rec.s) {
+            if (!pc.done) pc.rec.p.push([r1(pc.body.position.x), r1(pc.body.position.y), r3(pc.body.angle)]);
+          }
+          fell.push(...this.removeFallen(frames));
+        }
+        const flying = burstFrame < 0 || pieces.some((x) => !x.done);
+        rest = !flying && this.allAtRest() ? rest + 1 : 0;
+        if (rest > 24) break;
+      }
+    } finally {
+      Events.off(this.engine, 'collisionStart', onCollide);
+      if (burstFrame < 0) Composite.remove(this.engine.world, bag);
+      for (const pc of pieces) if (!pc.done) Composite.remove(this.engine.world, pc.body);
+    }
+    if (burstFrame < 0) burstFrame = Math.max(0, frames.count - 1);
+    frames.m = pieces.map((x) => x.rec);
+    return { frames, burstFrame, burst, fell };
+  }
+
   /** 戴在頭上的穿戴型道具（鋼盔）uid */
   wornHelmets(seat: Seat): string[] {
     const x = this.charX[seat],

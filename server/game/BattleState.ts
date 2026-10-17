@@ -2,7 +2,7 @@
 // 傷害、防禦耐久、狀態全部只在這裡改，避免各模組各算各的。
 
 import { ARENA } from '../../shared/config/game.js';
-import { bodyScaleOf, traitsOf, type CharacterTraits } from '../../shared/config/characters.js';
+import { bodyScaleOf, inBond, traitsOf, type BondId, type CharacterTraits } from '../../shared/config/characters.js';
 import { BOND_CARRY, getItem, getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
 import { seatsOf, sideDir, teamOf, type DamageEntry, type DefenseUpdate, type DefenseView, type GameMode, type HealEntry, type Seat, type StatusView, type StuckItem, type Team } from '../../shared/types.js';
 import { startXOf } from '../../shared/physics.js';
@@ -81,6 +81,11 @@ export class BattleState {
       if (thrower !== undefined && carried !== undefined) return { thrower, carried };
     }
     return null;
+  }
+
+  /** 這個座位有沒有這組羈絆 */
+  inBond(bond: BondId, seat: Seat): boolean {
+    return inBond(bond, seat, this.mode, this.characterIds, this.fighters.map((f) => f.hp > 0));
   }
 
   /** 隊伍是否全滅 */
