@@ -11,6 +11,7 @@ import { store } from './state/store.js';
 import { clearUi, showCharacterSelect, showGameOver, showMenu, showWaiting } from './ui/screens.js';
 import { toast } from './ui/toast.js';
 import { sfx } from './game/sfx.js';
+import { setupLandscape } from './ui/landscape.js';
 
 // 音效開關（記在這台裝置上）＋所有按鈕的點擊聲
 const muteBtn = document.createElement('button');
@@ -26,7 +27,7 @@ muteBtn.addEventListener('click', (e) => {
   renderMute();
   sfx.play('click');
 });
-document.body.appendChild(muteBtn);
+document.getElementById('app')!.appendChild(muteBtn);
 document.addEventListener('click', (e) => {
   const el = e.target as HTMLElement | null;
   if (el && el !== muteBtn && el.closest('button, .char-card')) sfx.play('click');
@@ -41,12 +42,16 @@ const game = new Phaser.Game({
   width: ARENA.width,
   height: ARENA.height,
   backgroundColor: '#3f8fd0', // 天空頂端的顏色（清畫面用，比畫一層全螢幕的圖便宜）
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+  // 置中交給 #game 的 flex（手機轉橫向時 Phaser 自己算的置中會錯）
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.NO_CENTER },
   // 慢的裝置（低於 5 FPS）時 Phaser 預設會把每幀時間縮成 16ms，動畫和計時會變得超慢；
   // 放寬到 2 FPS 才啟動保護，讓慢裝置的動畫仍跟真實時間同步。
   fps: { min: 2 },
   scene: [BootScene, BackdropScene, BattleScene, BattleUIScene],
 });
+// 手機直拿時自動把畫面轉成橫向
+setupLandscape(game);
+
 
 let assetsReady = false;
 game.events.once('assets-ready', () => {

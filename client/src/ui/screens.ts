@@ -349,11 +349,11 @@ function confetti(): void {
   for (let i = 0; i < 60; i++) {
     const c = document.createElement('div');
     c.className = 'confetti';
-    c.style.left = Math.random() * 100 + 'vw';
+    c.style.left = Math.random() * 100 + '%';
     c.style.background = colors[i % colors.length];
     c.style.animationDuration = 1.8 + Math.random() * 1.6 + 's';
     c.style.animationDelay = Math.random() * 0.6 + 's';
-    document.body.appendChild(c);
+    document.getElementById('app')!.appendChild(c);
     setTimeout(() => c.remove(), 4500);
   }
 }
