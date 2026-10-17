@@ -124,7 +124,7 @@ export class Hud {
           })
           // 竹竿：連中、胡牌、憤怒
           .concat(p.huReady ? ['胡！下次必抽麻將'] : p.streak ? [`連中 ${p.streak}/3`] : [])
-          .concat(p.rage ? [`憤怒 傷害+${p.rage.toFixed(2)}`] : [])
+          .concat(p.rage ? [p.rage > 0 ? `憤怒 傷害+${p.rage.toFixed(2)}` : `喪偶 傷害${p.rage.toFixed(2)}`] : [])
           .concat(p.shield ? [`護盾 ${p.shield}`] : [])
           .join('  '),
       );

@@ -68,6 +68,16 @@ export class BattleState {
     return m;
   }
 
+  /** 場上自己的防禦道具指定的基本傷害倍率（連恩的鄭霖澤保鑣） */
+  defenseOverride(seat: Seat): number | undefined {
+    for (const d of this.defenses) {
+      if (d.owner !== seat) continue;
+      const def = getItem(d.itemId);
+      if (def?.kind === 'defense' && def.ownerOutgoingOverride !== undefined) return def.ownerOutgoingOverride;
+    }
+    return undefined;
+  }
+
   traits(seat: Seat): CharacterTraits {
     return traitsOf(this.characterIds[seat]);
   }
@@ -101,9 +111,9 @@ export class BattleState {
       const ta = this.traits(attacker);
       // 角色基本傷害倍率（連恩對鄭霖澤改用另一個倍率）
       const vs = ta.outgoingVsChar?.[this.characterIds[seat] ?? ''];
-      raw *= this.multiplier(attacker, 'outgoingMultiplier') * (vs ?? ta.outgoingMultiplier ?? 1) * this.defenseBoost(attacker);
-      // 竹竿：手辦被毀的憤怒（每個 +0.15）
-      raw *= 1 + (this.fighters[attacker].rage ?? 0);
+      // 基本倍率：場上有保鑣時改用保鑣的倍率（連恩 0.5 → 0.8）；再加上手辦憤怒 / 喪偶這類永久加減
+      const base = this.defenseOverride(attacker) ?? vs ?? ta.outgoingMultiplier ?? 1;
+      raw *= this.multiplier(attacker, 'outgoingMultiplier') * Math.max(0, base + (this.fighters[attacker].rage ?? 0)) * this.defenseBoost(attacker);
       // 自己用某些道具特別痛（連恩的 Maya、poopoo恩）
       if (itemId) raw *= ta.ownItemMultiplier?.[itemId] ?? 1;
       // 被特定角色打（鄭霖澤打連恩 ×0.5）
@@ -303,7 +313,7 @@ export class BattleState {
     if (def?.kind !== 'defense' || !def.destroyedOwnerBonus) return undefined;
     const f = this.fighters[d.owner];
     f.rage = Math.round(((f.rage ?? 0) + def.destroyedOwnerBonus) * 100) / 100;
-    return { seat: d.owner, total: f.rage };
+    return { seat: d.owner, total: f.rage, delta: def.destroyedOwnerBonus, ...(def.destroyedLabel ? { label: def.destroyedLabel } : {}) };
   }
 
   removeDefense(uid: string): void {

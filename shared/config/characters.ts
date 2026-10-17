@@ -245,7 +245,9 @@ export const CHARACTERS: CharacterDef[] = [
       '自己丟的 Maya 2026 傷害 ×4',
       '自己丟的 poopoo恩 傷害 ×3，而且是一般的 2.5 倍大',
       '抽到 poopoo恩 的機率 ×1.5',
+      '專屬卡牌「鄭霖澤保鑣」（對手不是鄭霖澤時）：擋 3 次攻擊，在場時傷害倍率 0.5 → 0.8；他被打中連恩受 20% 傷害；被打倒後喪偶難過，傷害永久 -0.2',
     ],
+    exclusiveItems: ['zhengGuard'],
     placeholder: { color: 0xf48fb1, accent: 0xf1d3b8 },
   },
   {

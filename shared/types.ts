@@ -181,7 +181,7 @@ export interface DefenseUpdate {
   /** 'hit' 被打壞、'fell' 掉出場外、'removed' 被功能道具移除 */
   reason?: 'hit' | 'fell' | 'removed';
   /** 被打壞後主人的憤怒加成（竹竿的手辦） */
-  rage?: { seat: Seat; total: number };
+  rage?: { seat: Seat; total: number; delta?: number; label?: string };
 }
 
 export type ImpactKind = 'character' | 'defense' | 'platform' | 'out';

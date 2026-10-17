@@ -118,7 +118,13 @@ export interface DefenseDef extends ItemBase {
   maxPerPlayer?: number;
   /** 還在場上時，放置者造成的傷害倍率（獸控 ×2） */
   ownerOutgoingMultiplier?: number;
-  /** 被摧毀時，放置者的傷害永久增加這麼多（竹竿的手辦：+0.15） */
+  /** 還在場上時，放置者的基本傷害倍率改成這個（連恩的鄭霖澤保鑣：0.5 → 0.8） */
+  ownerOutgoingOverride?: number;
+  /** 被打中時，放置者也受到這次傷害的這個比例（四捨五入） */
+  ownerShareDamage?: number;
+  /** 被摧毀時的顯示文字（例如「喪偶難過」） */
+  destroyedLabel?: string;
+  /** 被摧毀時，放置者的傷害永久增加這麼多（竹竿的手辦：+0.15；連恩的保鑣：-0.2） */
   destroyedOwnerBonus?: number;
   /** 倒下壓到放置者時改成回血這麼多，而且道具消失（獸控） */
   crushHealsOwner?: number;
@@ -478,6 +484,33 @@ export const ITEMS: ItemDef[] = [
     durationTurns: null,
     blocks: 'all',
     destroyedOwnerBonus: 0.15,
+  },
+
+  {
+    id: 'zhengGuard',
+    kind: 'defense',
+    name: '鄭霖澤保鑣',
+    description: '連恩專屬（對手是鄭霖澤時抽不到）。鄭霖澤本人站出來擋，可以擋 3 次攻擊；他在場時連恩的傷害倍率提升到 0.8，但他每被打中一次連恩也會受到 20% 的傷害；被打倒後連恩喪偶難過，傷害永久 -0.2。',
+    icon: 'assets/items/zheng_guard.png',
+    sprite: 'assets/items/zheng_guard.png',
+    placeholder: { shape: 'rect', color: 0xbdb6aa },
+    exclusiveTo: ['lianen'],
+    notVs: ['zhenglinze'],
+    // 跟一般角色一樣高
+    size: { w: 64, h: 150 },
+    weightKg: 70,
+    density: 0.003,
+    friction: 0.6,
+    durability: null,
+    maxHits: 3,
+    damageReduction: 1,
+    durationTurns: null,
+    blocks: 'all',
+    maxPerPlayer: 1,
+    ownerOutgoingOverride: 0.8,
+    ownerShareDamage: 0.2,
+    destroyedOwnerBonus: -0.2,
+    destroyedLabel: '喪偶難過',
   },
 
   // ---------------- 功能型 ----------------

@@ -1177,7 +1177,9 @@ export class BattleScene extends Phaser.Scene {
   private showRage(updates: DefenseUpdate[]): void {
     for (const u of updates) {
       if (!u.rage) continue;
-      floatingText(this, this.xOf(u.rage.seat), ARENA.groundY - 280, `憤怒！傷害 +0.15（共 +${u.rage.total.toFixed(2)}）`, '#ff7043');
+      const d = u.rage.delta ?? 0.15;
+      const sign = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(2);
+      floatingText(this, this.xOf(u.rage.seat), ARENA.groundY - 280, `${u.rage.label ?? '憤怒'}！傷害 ${sign(d)}（共 ${sign(u.rage.total)}）`, d >= 0 ? '#ff7043' : '#90a4ae');
     }
   }
 

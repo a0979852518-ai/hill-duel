@@ -150,7 +150,7 @@ export class AiPlayer {
     if (item.kind === 'defense') {
       const mine = st.defenses.filter((d) => d.owner === this.seat).length;
       // 獸控：擋 2 次＋之後傷害 ×2，很划算
-      if (item.ownerOutgoingMultiplier) return 4 + 15 * hitRate;
+      if (item.ownerOutgoingMultiplier || item.ownerOutgoingOverride) return 4 + 15 * hitRate;
       return 4 - mine * 2;
     }
     // 功能道具

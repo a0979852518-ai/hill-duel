@@ -39,6 +39,13 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
         reductionFor = d.owner;
         reduction = d.damageReduction;
         const upd = state.hitDefense(d.uid, item.structureDamage ?? item.damage);
+        // 連恩的鄭霖澤保鑣：被打中時連恩也痛（這次傷害的 20%）
+        const ddef = getItem(d.itemId);
+        if (upd && ddef?.kind === 'defense' && ddef.ownerShareDamage && state.fighters[d.owner].hp > 0) {
+          const share = Math.round(item.damage * Math.pow(0.5, impact.bounces ?? 0) * ddef.ownerShareDamage);
+          const e = share > 0 ? state.dealDamage(d.owner, share, 'status') : null;
+          if (e) damages.push({ ...e, label: '心疼保鑣' });
+        }
         if (upd) {
           defenseUpdates.push(upd);
           if (upd.destroyed) destroyedNow.push(upd.uid);
