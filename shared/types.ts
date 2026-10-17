@@ -165,6 +165,8 @@ export interface DamageEntry {
   label?: string;
   /** 觸發鎖血（葉柄承：第一次歸零固定在 1 血） */
   survived?: boolean;
+  /** 自己丟的東西打到自己 */
+  self?: boolean;
 }
 
 export interface HealEntry {

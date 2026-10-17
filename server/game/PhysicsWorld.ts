@@ -14,7 +14,7 @@ import type { DefenseDef, ThrowableDef } from '../../shared/config/items.js';
 import { launchPoint } from '../../shared/physics.js';
 import type { ImpactKind, PhysicsFrames, Seat } from '../../shared/types.js';
 
-const { Engine, Bodies, Body, Composite, Events, Query, Sleeping } = Matter;
+const { Engine, Bodies, Body, Bounds, Composite, Events, Query, Sleeping } = Matter;
 
 // 碰撞分類（bit）：讓投擲物不會撞到「自己」的角色與防禦道具
 const CAT = {
@@ -77,6 +77,8 @@ interface KnockState {
   restSteps: number;
   /** 往哪邊被推（-1 / 1） */
   away: number;
+  /** 往前飛（打到自己）：動作圖要左右鏡像 */
+  rev: boolean;
   /** 擊退初速（決定在地上滾幾圈） */
   speed: number;
   /** 翻滾結束時身體中心 */
@@ -115,6 +117,8 @@ export interface KnockRequest {
   stayDown: boolean;
   /** 擊退初速大小（像素/秒） */
   speed: number;
+  /** 往哪邊飛（-1 / 1）；沒給就是往自己身後（打到自己時可能往前飛） */
+  away?: number;
 }
 
 export interface ThrowImpact {
@@ -344,7 +348,8 @@ export class PhysicsWorld {
       phase: 'tumble',
       t: 0,
       restSteps: 0,
-      away: seat === 0 ? -1 : 1,
+      away: req.away ?? (seat === 0 ? -1 : 1),
+      rev: (req.away ?? (seat === 0 ? -1 : 1)) !== (seat === 0 ? -1 : 1),
       speed: req.speed,
       com: { x, y: G - ts.h / 2 },
       angle0: 0,
@@ -562,7 +567,9 @@ export class PhysicsWorld {
   private recordKnock(k: KnockState, frames: PhysicsFrames): void {
     // record() 已經把 frames.count +1，這裡補上同一格
     const p = this.knockPose(k);
-    while (k.frames.length < frames.count) k.frames.push([r1(p[0]), r1(p[1]), r3(p[2]), r3(p[3]), p[4]]);
+    // 往前飛（打到自己）：整個身體左右鏡像，動作圖才會是「往飛的方向倒」
+    const flip = k.rev && (!k.done || k.stayDown) ? -1 : 1;
+    while (k.frames.length < frames.count) k.frames.push([r1(p[0]), r1(p[1]), r3(p[2]), r3(p[3] * flip), p[4]]);
   }
 
   // ------------------------------------------------------------ 模擬
@@ -710,9 +717,13 @@ export class PhysicsWorld {
       label: 'proj',
       collisionFilter: {
         category: CAT.proj,
+        // 一開始只撞得到對手（出手點在自己身上）；離開自己的身體後才會打到自己。
+        // 自己的防禦道具永遠撞不到。
         mask: CAT.world | (seat === 0 ? CAT.char1 | CAT.def1 : CAT.char0 | CAT.def0),
       },
     });
+    const selfCat = seat === 0 ? CAT.char0 : CAT.char1;
+    let selfArmed = false;
     Body.setVelocity(proj, { x: (Math.cos(rad) * speed * dir) / 60, y: (-Math.sin(rad) * speed) / 60 });
     Body.setAngularVelocity(proj, (item.spin ?? 0.25) * dir);
     Composite.add(this.engine.world, proj);
@@ -789,6 +800,11 @@ export class PhysicsWorld {
       const extraSteps = Math.ceil(Math.max(this.extraLie[0], this.extraLie[1]) / STEP_MS);
       while (step < maxFlight + afterSteps + settleSteps + extraSteps) {
         if (!projGone && extraG !== 0) Body.applyForce(proj, proj.position, { x: 0, y: proj.mass * extraG });
+        // 投擲物完全離開自己的身體後，才開放打到自己
+        if (!selfArmed && !projGone && !impact && !Bounds.overlaps(proj.bounds, this.chars[seat].bounds)) {
+          selfArmed = true;
+          proj.collisionFilter.mask |= selfCat;
+        }
         if (!projGone && !impact) {
           lastSpeed = Body.getSpeed(proj) * 60;
           lastVel = { x: proj.velocity.x * 60, y: proj.velocity.y * 60 };

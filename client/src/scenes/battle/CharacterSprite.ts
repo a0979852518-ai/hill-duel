@@ -167,7 +167,8 @@ export class CharacterSprite {
     if (useFrame) {
       // 用被打飛的連續動作圖（往後仰 → 往後倒 → 滾 → 躺）
       this.showKnockFrame(frame);
-      this.body.scaleX = 1;
+      // 打到自己往前飛：動作圖左右鏡像
+      this.body.scaleX = flip < 0 ? -1 : 1;
     } else {
       if (this.knockFrame) this.endKnock();
       // 沒有連續動作圖的角色：在地上滾的時候身體翻面（側面看會變薄再翻過來）

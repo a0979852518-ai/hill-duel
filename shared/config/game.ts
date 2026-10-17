@@ -128,9 +128,9 @@ export const CAMERA = {
 
 /** 投擲操作：滑鼠/手指決定方向，按住蓄力，放開投出 */
 export const AIM_CONFIG = {
-  /** 可瞄準的角度範圍（0 = 水平，90 = 正上方） */
+  /** 可瞄準的角度範圍（0 = 水平，90 = 正上方，超過 90 = 往自己頭上／身後丟，可能砸到自己） */
   minAngle: -10,
-  maxAngle: 88,
+  maxAngle: 100,
   minPower: 0.05,
   maxPower: 1,
   /** 從 0 蓄滿需要幾秒 */

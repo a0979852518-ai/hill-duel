@@ -105,6 +105,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
       if (entry && headshot) entry.headshot = true;
       if (entry && crit) entry.crit = true;
       if (entry && bounces > 0) entry.bounces = bounces;
+      if (entry && source === 'direct' && target === seat) entry.self = true;
       if (entry) {
         damages.push(entry);
         hitSeats.push(target);
@@ -124,13 +125,16 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
         const e = state.dealDamage(knockSeat, old, 'status');
         if (e) damages.push({ ...e, label: '年邁' });
       }
-      knock = knockRequest(knockSeat, knockSpeed, impact.y, impactVel, state.fighters[knockSeat].hp <= 0, item.weightKg ?? 0.5, state.physics.getCharScale(knockSeat));
+      // 打到自己：照投擲物飛行的方向被推（通常是往前倒）
+      const away = knockSeat === seat ? (impactVel.x === 0 ? (seat === 0 ? 1 : -1) : Math.sign(impactVel.x)) : undefined;
+      knock = knockRequest(knockSeat, knockSpeed, impact.y, impactVel, state.fighters[knockSeat].hp <= 0, item.weightKg ?? 0.5, state.physics.getCharScale(knockSeat), away);
     }
 
-    // 3) 附加狀態（只附加給敵人）
-    if (item.onHitStatus && hitSeats.includes(enemy) && effectsOn(enemy)) {
-      const applied = state.applyStatus(enemy, item.onHitStatus.statusId, item.onHitStatus.turns, seat);
-      statusApplied = { seat: enemy, statusId: item.onHitStatus.statusId, turns: applied || item.onHitStatus.turns, ...(applied ? {} : { immune: true }) };
+    // 3) 附加狀態：直接打中誰就給誰（打到自己也一樣）；爆炸波及只附加給敵人
+    const statusSeat: Seat = impact.kind === 'character' && impact.hitSeat !== undefined ? impact.hitSeat : enemy;
+    if (item.onHitStatus && hitSeats.includes(statusSeat) && effectsOn(statusSeat)) {
+      const applied = state.applyStatus(statusSeat, item.onHitStatus.statusId, item.onHitStatus.turns, seat);
+      statusApplied = { seat: statusSeat, statusId: item.onHitStatus.statusId, turns: applied || item.onHitStatus.turns, ...(applied ? {} : { immune: true }) };
     }
     return { remove: destroyedNow, knock };
   });
@@ -223,7 +227,7 @@ export function throwDurationMs(ev: ThrowEvent): number {
  *  打在中心附近 → 幾乎不轉，整個人被推最遠；
  *  打在中心以下 → 腳被掃開，上半身往前（朝出手方向）撲倒、彈得比較高。
  */
-export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: number; y: number }, stayDown: boolean, weightKg = 0.5, bodyScale = 1): KnockRequest {
+export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: number; y: number }, stayDown: boolean, weightKg = 0.5, bodyScale = 1, awayDir?: number): KnockRequest {
   // 重量決定擊退「樣式」：中等重量 → 被推開、跌坐滑行；很重 → 整個人被打飛、在空中翻滾、落地彈好幾下
   const heavy = Math.max(0, Math.min(1, (weightKg - 0.3) / 1));
   const liftMul = 0.55 + 0.9 * heavy;
@@ -231,7 +235,7 @@ export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: 
   const half = (ARENA.characterBody.torsoH / 2 + 16) * bodyScale; // 身體中心到頭頂/腳底約 75px（矮的角色比較短）
   const comY = ARENA.groundY - 75 * bodyScale;
   const rel = Math.max(-1, Math.min(1, (hitY - comY) / half)); // -1 頭頂、0 中心、+1 腳底
-  const away = seat === 0 ? -1 : 1; // 被打的人往自己身後飛
+  const away = awayDir ?? (seat === 0 ? -1 : 1); // 被打的人往自己身後飛（打到自己時照投擲物方向）
   // 投擲物是往下砸的話，往後推的比例小一點（力量被地面吃掉）
   const len = Math.hypot(vel.x, vel.y) || 1;
   const horiz = Math.max(0.55, Math.abs(vel.x) / len);
@@ -244,5 +248,5 @@ export function knockRequest(seat: Seat, speed: number, hitY: number, vel: { x: 
   // 一律往後倒（被推的方向），打點離中心越遠轉越快；至少每秒轉 4.5 弧度，不會站著晃半天
   const omega = away * Math.max(4.5, (Math.abs(rel) * KNOCKBACK.spin + KNOCKBACK.baseSpin) * speed * spinMul);
   // 上限：飛太高、轉太快會飛出畫面、看不清楚
-  return { seat, vx, vy: Math.max(vy, -KNOCKBACK.maxLift), omega: Math.sign(omega) * Math.min(Math.abs(omega), KNOCKBACK.maxSpin), stayDown, speed };
+  return { seat, vx, vy: Math.max(vy, -KNOCKBACK.maxLift), omega: Math.sign(omega) * Math.min(Math.abs(omega), KNOCKBACK.maxSpin), stayDown, speed, ...(awayDir !== undefined ? { away: awayDir } : {}) };
 }

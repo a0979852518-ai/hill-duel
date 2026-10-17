@@ -520,7 +520,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean; survived?: boolean; shielded?: number; label?: string }[]): void {
+  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean; survived?: boolean; shielded?: number; label?: string; self?: boolean }[]): void {
     for (const d of damages) {
       if (d.source === 'crush') {
         sfx.play('crush');
@@ -539,6 +539,7 @@ export class BattleScene extends Phaser.Scene {
         if (d.headshot) sfx.play('headshot');
       } else if (d.source === 'status') sfx.play('oof', { vol: 0.5, rate: 1.1 });
       const critTag = d.crit ? '爆擊！' : '';
+      if (d.self) floatingText(this, this.xOf(d.seat), ARENA.groundY - 300, '打到自己！', '#ff8a80');
       damageNumber(
         this,
         this.xOf(d.seat),
