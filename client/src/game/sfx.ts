@@ -120,6 +120,8 @@ export const SOUNDS: Record<string, Layer[]> = {
   ],
   status: [L([0.5, 0.05, 400, 0, 0.15, 0.2, 2, 1, -6, 0, 0, 0, 0, 0, 4])],
 };
+// 台大自助餐：跟正忠排骨一樣是吃東西回血的聲音
+SOUNDS.use_ntuBuffet = SOUNDS.use_porkChop;
 
 /** 每個投擲物命中時用哪個聲音（沒有就用通用打擊聲） */
 export const itemHitSound = (itemId: string) => (SOUNDS[`hit_${itemId}`] ? `hit_${itemId}` : 'punch');
