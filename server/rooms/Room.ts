@@ -51,6 +51,8 @@ export class Room {
   endReason: 'hp' | 'forfeit' | null = null;
   private cleanupTimer: NodeJS.Timeout | null = null;
   private ais: AiPlayer[] = [];
+  /** 結算畫面按了「再來一局」的座位 */
+  private rematchVotes = new Set<Seat>();
   /** 這場的地圖（開打時隨機挑） */
   mapId: string | null = null;
 
@@ -198,6 +200,7 @@ export class Room {
   private dropPlayer(seat: Seat): void {
     const p = this.players[seat];
     if (!p) return;
+    this.rematchVotes.delete(seat);
     if (p.dropTimer) clearTimeout(p.dropTimer);
     p.dropTimer = null;
     if (this.status === 'battle' && this.battle) {
@@ -215,6 +218,46 @@ export class Room {
     }
     this.broadcast();
     this.scheduleCleanupIfEmpty();
+    // 結算畫面有人離開：剩下的人如果都已經按了再來一局，就直接開始
+    if (this.status === 'gameOver') this.checkRematch();
+  }
+
+  // ------------------------------------------------------------ 再來一局
+
+  voteRematch(seat: Seat): ErrorCode | null {
+    if (this.status !== 'gameOver') return 'WRONG_PHASE';
+    if (!this.players[seat]) return 'NOT_IN_ROOM';
+    this.rematchVotes.add(seat);
+    this.broadcast();
+    this.checkRematch();
+    return null;
+  }
+
+  /** 還在房間的真人都按了 → 回到選角（保留角色，電腦自動準備好）；有空位就回到等待 */
+  private checkRematch(): void {
+    const humans = this.players.filter((p) => p && !p.bot && p.connected) as RoomPlayer[];
+    if (humans.length === 0 || !humans.every((p) => this.rematchVotes.has(p.seat))) return;
+    this.ais.forEach((a) => a.dispose());
+    this.ais = [];
+    this.battle?.dispose();
+    this.battle = null;
+    this.winnerTeam = null;
+    this.endReason = null;
+    this.mapId = null;
+    this.rematchVotes.clear();
+    // 斷線中的人（還在等重連）讓出位子
+    for (const p of this.players) {
+      if (!p) continue;
+      if (!p.bot && !p.connected) {
+        if (p.dropTimer) clearTimeout(p.dropTimer);
+        this.players[p.seat] = null;
+        continue;
+      }
+      p.confirmed = !!p.bot;
+    }
+    this.cancelCleanup();
+    this.status = this.full ? 'characterSelect' : 'waiting';
+    this.broadcast();
   }
 
   // ------------------------------------------------------------ 角色選擇
@@ -316,6 +359,7 @@ export class Room {
       turn: this.battle && this.status === 'battle' ? this.battle.turnView() : null,
       winnerSeat: this.winnerTeam,
       winnerTeam: this.winnerTeam,
+      ...(this.status === 'gameOver' && this.rematchVotes.size ? { rematch: [...this.rematchVotes] } : {}),
       endReason: this.endReason,
       ...(this.mapId ? { mapId: this.mapId } : {}),
     };

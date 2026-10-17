@@ -195,6 +195,7 @@ export class RoomManager {
         return room.fillBots(diffs.includes(p?.difficulty) ? p.difficulty : 'normal');
       }),
     );
+    socket.on('room:rematch', withRoom((room, seat) => room.voteRematch(seat)));
     socket.on('room:seat', withRoom((room, seat, p: { seat: Seat }) => room.changeSeat(seat, Number(p?.seat) as Seat, socket)));
     socket.on('char:select', withRoom((room, seat, p: { characterId: string }) => room.selectCharacter(seat, String(p?.characterId))));
     socket.on('char:confirm', withRoom((room, seat) => room.confirmCharacter(seat)));

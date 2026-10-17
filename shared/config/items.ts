@@ -344,16 +344,18 @@ export const ITEMS: ItemDef[] = [
     id: 'move',
     kind: 'throwable',
     name: '移動',
-    description: '把自己射出去，換個位置站（最遠約 30 m，可以往前或往後）。落在別人身上造成 10 傷害並把對方推開。',
+    description: '每回合都能選。把自己射出去換位置（最遠 50 m，角度超過 90° 往後跳）。落在別人身上造成 10 傷害並推開。',
     icon: 'assets/items/move.png',
     placeholder: { shape: 'circle', color: 0xff9800 },
     tags: ['self'],
     damage: 10,
     weightKg: 6,
     selfLaunch: true,
-    // 最遠約 300 px（30 m）：45° 全力實測約 300（落地會被地面吃掉一點速度）
+    // 不靠抽：每回合固定多出來的選項（見 EXTRA_OPTION）
+    weight: 0,
+    // 最遠約 500 px（50 m）：45° 全力實測
     minSpeed: 120,
-    maxSpeed: 625,
+    maxSpeed: 822,
     gravityScale: 1,
     radius: 20,
     explosionRadius: 0,
@@ -834,3 +836,6 @@ export function itemTargetsEnemy(item: ItemDef | undefined): boolean {
   if (item.handler === 'directDamage' || item.handler === 'damageBoth') return true;
   return item.handler === 'applyStatus' && item.params.target !== 'self';
 }
+
+/** 每回合固定多出來的選項（不靠抽）：移動 */
+export const EXTRA_OPTION = 'move';

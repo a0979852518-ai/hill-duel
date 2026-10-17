@@ -160,6 +160,8 @@ export interface RoomSnapshot {
   endReason: 'hp' | 'forfeit' | null;
   /** 這場用哪張地圖（shared/config/maps.ts） */
   mapId?: string;
+  /** 結算畫面按了「再來一局」的座位 */
+  rematch?: Seat[];
 }
 
 export interface DamageEntry {
@@ -313,6 +315,8 @@ export interface ClientToServerEvents {
   'room:seat': (p: { seat: Seat }, ack: Ack) => void;
   'room:resume': (p: { code: string; token: string }, ack: Ack<JoinResult>) => void;
   'room:leave': () => void;
+  /** 結算畫面：再來一局（同房間的真人都按了就回到選角） */
+  'room:rematch': (ack: Ack) => void;
   'char:select': (p: { characterId: string }, ack: Ack) => void;
   'char:confirm': (ack: Ack) => void;
   'turn:stopSlot': (p: { turnId: number }, ack: Ack) => void;

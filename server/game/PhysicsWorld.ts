@@ -476,7 +476,8 @@ export class PhysicsWorld {
       const ts = this.tumbleSize(k.seat);
       const lowest = b.position.y + ts.h / 2;
       if (lowest < ARENA.groundY - 6) k.airborne = true;
-      const landed = k.airborne && lowest >= ARENA.groundY - 3 && b.velocity.y >= -0.2;
+      // 一碰到地就算落地（不然會被彈起來多飛一段，距離忽長忽短）
+      const landed = k.airborne && lowest >= ARENA.groundY - 4;
       if (landed || (!k.airborne && k.t > 0.35) || k.t > 3) {
         k.endX = Math.min(range[1], Math.max(range[0], b.position.x));
         Composite.remove(this.engine.world, b);

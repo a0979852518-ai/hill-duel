@@ -624,8 +624,23 @@ function hex(n: number): string {
 
 let resultPending = false;
 
+/** 「再來一局」按鈕與等待人數 */
+function renderRematch(el: HTMLElement, snap: RoomSnapshot, mySeat: Seat): void {
+  const humans = snap.players.filter((p) => p && !p.bot);
+  const votes = snap.rematch ?? [];
+  const voted = humans.filter((p) => votes.includes(p!.seat)).length;
+  const btn = el.querySelector<HTMLButtonElement>('[data-act=rematch]')!;
+  const mine = votes.includes(mySeat);
+  btn.disabled = mine;
+  btn.textContent = mine ? '等待其他人…' : '再來一局';
+  const info = el.querySelector<HTMLElement>('[data-rematch]')!;
+  info.textContent = humans.length > 1 ? `想再來一局：${voted} / ${humans.length} 人` : '';
+}
+
 export function showGameOver(snap: RoomSnapshot, mySeat: Seat): void {
-  if (resultPending || ui().querySelector('[data-screen=result]')) return;
+  const existing = ui().querySelector<HTMLElement>('[data-screen=result]');
+  if (existing) return renderRematch(existing, snap, mySeat);
+  if (resultPending) return;
   resultPending = true;
   const wt = snap.winnerTeam ?? (snap.winnerSeat !== null ? teamOf(snap.winnerSeat) : 0);
   const win = teamOf(mySeat) === wt;
@@ -640,8 +655,19 @@ export function showGameOver(snap: RoomSnapshot, mySeat: Seat): void {
         🏆 勝利：${names(winners)}<br>
         💥 落敗：${names(losers)} ${esc(reason)}
       </div>
-      <button class="btn block" data-act="menu">返回主選單</button>
+      <button class="btn block" data-act="rematch">再來一局</button>
+      <p class="subtitle" data-rematch></p>
+      <button class="btn secondary block" data-act="menu">返回主選單</button>
     </div>`);
+  el.querySelector('[data-act=rematch]')!.addEventListener('click', async () => {
+    const b = el.querySelector<HTMLButtonElement>('[data-act=rematch]')!;
+    b.disabled = true;
+    const res = await store.net.call('room:rematch');
+    if (!res.ok) {
+      b.disabled = false;
+      toast(errText(res.error), true);
+    }
+  });
   el.querySelector('[data-act=menu]')!.addEventListener('click', () => {
     store.net.leaveRoom();
     window.dispatchEvent(new CustomEvent('hillduel:left'));
@@ -654,6 +680,7 @@ export function showGameOver(snap: RoomSnapshot, mySeat: Seat): void {
       resultPending = false;
       if (store.snapshot?.status !== 'gameOver') return;
       ui().replaceChildren(el);
+      renderRematch(el, store.snapshot, mySeat);
       if (win) confetti();
     });
 }

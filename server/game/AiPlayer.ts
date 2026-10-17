@@ -138,7 +138,13 @@ export class AiPlayer {
 
   private pickItem(options: string[]): string | null {
     if (options.length === 0) return null;
-    if (Math.random() >= this.profile.smart) return options[Math.floor(Math.random() * options.length)];
+    // 亂選時不太會去選「移動」（每回合都有，不然弱的電腦會一直跳來跳去）
+    const real = options.filter((id) => {
+      const it = getItem(id);
+      return !(it?.kind === 'throwable' && it.selfLaunch);
+    });
+    const pool = real.length && Math.random() > 0.08 ? real : options;
+    if (Math.random() >= this.profile.smart) return pool[Math.floor(Math.random() * pool.length)];
     let best = options[0],
       bestScore = -Infinity;
     for (const id of options) {

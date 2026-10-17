@@ -150,6 +150,7 @@ export class BattleScene extends Phaser.Scene {
     });
     this.input.keyboard?.on('keydown-ONE', () => this.pickByIndex(0));
     this.input.keyboard?.on('keydown-TWO', () => this.pickByIndex(1));
+    this.input.keyboard?.on('keydown-THREE', () => this.pickByIndex(2));
     // Q：看自己角色的技能
     this.input.keyboard?.on('keydown-Q', () => this.toggleSkills());
 

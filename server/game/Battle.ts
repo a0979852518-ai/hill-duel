@@ -12,7 +12,7 @@
 // ============================================================
 
 import { AIM_CONFIG, GAME_CONFIG } from '../../shared/config/game.js';
-import { getItem, type ItemDef } from '../../shared/config/items.js';
+import { EXTRA_OPTION, getItem, type ItemDef } from '../../shared/config/items.js';
 import { teamOf, type BattleEvent, type ErrorCode, type GameMode, type Seat, type Team, type TurnPhase, type TurnView } from '../../shared/types.js';
 import { BattleState } from './BattleState.js';
 import { resolveThrow, throwDurationMs } from './Combat.js';
@@ -125,6 +125,8 @@ export class Battle {
     // 冷氣卡效果：藏起部分選項（至少留一個能選）
     const hide = Math.min(this.state.hiddenDrawCount(seat), Math.max(0, drawn.length - 1));
     this.options = drawn.slice(0, drawn.length - hide);
+    // 每回合固定多一個「移動」可以選（不佔抽到的格子）
+    if (getItem(EXTRA_OPTION)?.enabled !== false) this.options.push(EXTRA_OPTION);
     this.hiddenSlots = hide;
     this.phase = 'choose';
     this.hooks.onEvent({ type: 'slotResult', seat, options: this.options, hiddenSlots: hide });

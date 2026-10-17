@@ -3,7 +3,7 @@
 
 import * as Phaser from 'phaser';
 import { ARENA } from '../../../../shared/config/game.js';
-import { getItem, ITEMS, type DefenseDef } from '../../../../shared/config/items.js';
+import { EXTRA_OPTION, getItem, ITEMS, type DefenseDef } from '../../../../shared/config/items.js';
 import { defenseRect, launchPoint, placementZone, type Rect } from '../../../../shared/physics.js';
 import { sideDir, type DefenseView, type Seat } from '../../../../shared/types.js';
 import { iconKey } from '../../game/assets.js';
@@ -15,6 +15,7 @@ import type { ItemDef } from '../../../../shared/config/items.js';
 import { HIDDEN_ICON } from '../../game/assets.js';
 
 function kindLabel(item: ItemDef): string {
+  if (item.kind === 'throwable' && item.selfLaunch) return '移動（每回合都有）';
   if (item.kind === 'throwable') return '投擲攻擊';
   if (item.kind === 'defense') return '防禦';
   return item.role === 'defense' ? '功能防禦' : '功能攻擊';
@@ -31,6 +32,7 @@ function weightClass(kg: number): { label: string; color: string } {
   return { label: '重', color: '#c62828' };
 }
 function kindColor(item: ItemDef): number {
+  if (item.kind === 'throwable' && item.selfLaunch) return 0x00897b;
   if (item.kind === 'throwable') return 0xe8743b;
   if (item.kind === 'defense') return 0x3d7bd8;
   return item.role === 'defense' ? 0x43a047 : 0x8e5cc2;
@@ -45,7 +47,7 @@ export class SlotMachine {
   private spinTimer: Phaser.Time.TimerEvent | null = null;
   private state: 'hidden' | 'spinning' | 'landing' | 'landed' = 'hidden';
   private landPromise: Promise<void> = Promise.resolve();
-  private ids = ITEMS.filter((i) => i.enabled !== false && !i.exclusiveTo).map((i) => i.id);
+  private ids = ITEMS.filter((i) => i.enabled !== false && !i.exclusiveTo && i.weight !== 0).map((i) => i.id);
 
   constructor(private scene: Phaser.Scene) {
     this.root = scene.add.container(CX, 300).setDepth(60).setVisible(false);
@@ -96,7 +98,8 @@ export class SlotMachine {
 
   /** 停在伺服器給的結果上（兩個轉輪依序停下） */
   land(options: string[], hiddenSlots = 0): Promise<void> {
-    const shown = [...options, ...Array(hiddenSlots).fill(null)] as (string | null)[];
+    // 「移動」是每回合固定的選項，不在老虎機上
+    const shown = [...options.filter((id) => id !== EXTRA_OPTION), ...Array(hiddenSlots).fill(null)] as (string | null)[];
     if (this.state === 'landing' || this.state === 'landed') return this.landPromise;
     if (this.state === 'hidden') this.spin('');
     this.state = 'landing';
@@ -143,11 +146,15 @@ export class ChoiceCards {
 
   show(options: string[], interactive: boolean, onPick: (id: string) => void, hiddenSlots = 0): void {
     this.root.removeAll(true);
-    const gap = 290;
     const total = options.length + hiddenSlots;
+    // 卡片多的時候（抽到的＋固定的「移動」＋被封印的）間距縮小一點
+    const gap = total >= 4 ? 270 : 290;
+    // 排列：抽到的 → 被封印的 → 每回合固定的「移動」
+    const main = options.filter((id) => id !== EXTRA_OPTION).length;
+    const posOf = (i: number) => (i < main ? i : i + hiddenSlots);
     // 被冷氣卡藏起來的選項：一張鎖住的「？」卡
     for (let h = 0; h < hiddenSlots; h++) {
-      const x = (options.length + h - (total - 1) / 2) * gap;
+      const x = (main + h - (total - 1) / 2) * gap;
       const card = this.scene.add.container(x, 0);
       const bg = this.scene.add.rectangle(0, 0, 260, 210, 0x9fb7c4).setStrokeStyle(4, 0x2b2118);
       const icon = this.scene.add.image(0, -30, HIDDEN_ICON);
@@ -161,7 +168,7 @@ export class ChoiceCards {
     options.forEach((id, i) => {
       const item = getItem(id);
       if (!item) return;
-      const x = (i - (total - 1) / 2) * gap;
+      const x = (posOf(i) - (total - 1) / 2) * gap;
       const card = this.scene.add.container(x, 0);
       const bg = this.scene.add.rectangle(0, 0, 260, 210, 0xfff8ea).setStrokeStyle(4, 0x2b2118);
       const band = this.scene.add.rectangle(0, -88, 260, 34, kindColor(item)).setStrokeStyle(4, 0x2b2118);
@@ -187,6 +194,8 @@ export class ChoiceCards {
       const desc = this.scene.add
         .text(0, 58, item.description, { fontFamily: FONT, fontSize: '13px', color: '#5a4a3a', align: 'center', wordWrap: { width: 230, useAdvancedWrap: true } })
         .setOrigin(0.5);
+      // 移動丟的是自己：不顯示重量
+      if (item.kind === 'throwable' && item.selfLaunch) weightTag.setVisible(false);
       card.add([bg, band, kind, icon, weightTag, name, desc]);
       card.setScale(0.6).setAlpha(0);
       this.scene.time.delayedCall(i * 90, () => sfx.play('cardAppear', { rate: 1 + i * 0.15, gapMs: 0 }));
