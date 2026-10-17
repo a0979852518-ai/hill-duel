@@ -1,7 +1,7 @@
 // 攻擊結算：用物理世界模擬投擲 → 判斷命中 → 計算傷害 → 更新防禦與狀態。
 // 全部在伺服器上計算，客戶端只負責播放結果。
 
-import { getItem, type ThrowableDef } from '../../shared/config/items.js';
+import { BOND_CARRY, getItem, type ThrowableDef } from '../../shared/config/items.js';
 import { itemScaleFor } from '../../shared/config/characters.js';
 import { ARENA, DEFENSE_HIT, KNOCKBACK } from '../../shared/config/game.js';
 import type { KnockRequest } from './PhysicsWorld.js';
@@ -16,6 +16,11 @@ export const HEADSHOT_MULTIPLIER = 1.5;
 
 export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef, angle: number, power: number): ThrowEvent {
   if (item.selfLaunch) return resolveLeap(state, seat, item, angle, power);
+  // 羈絆卡：不管誰出這張牌，都是鄭霖澤把連恩丟出去
+  const user = seat;
+  const bond = item.id === BOND_CARRY.item ? state.bond(teamOf(seat)) : null;
+  if (bond) seat = bond.thrower;
+  const carriedSeat = bond?.carried;
   const damages: DamageEntry[] = [];
   const defenseUpdates: DefenseUpdate[] = [];
   let statusApplied: ThrowEvent['statusApplied'] = null;
@@ -114,6 +119,21 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
       }
     }
 
+    // 羈絆：連恩打中人之後自己也痛 10（戴著鋼盔就改成鋼盔耐用 -1）
+    if (carriedSeat !== undefined && impact.kind === 'character' && impact.hitSeat !== carriedSeat && state.fighters[carriedSeat].hp > 0) {
+      const helmet = state.physics.wornHelmets(carriedSeat).find((uid) => state.getDefense(uid));
+      if (helmet) {
+        const upd = state.hitDefense(helmet, 0);
+        if (upd) {
+          defenseUpdates.push(upd);
+          if (upd.destroyed) destroyedNow.push(upd.uid);
+        }
+      } else {
+        const e = state.dealDamage(carriedSeat, BOND_CARRY.selfDamage, 'status');
+        if (e) damages.push({ ...e, label: '撞到頭' });
+      }
+    }
+
     // 被打死的人不用黏了（死掉就會消失）
     if (stickAt && state.fighters[stickAt.seat].hp > 0) {
       stuck = { seat: stickAt.seat, item: state.stick(stickAt.seat, item.id, stickAt.x, stickAt.y, stickAt.feetX, projScale) };
@@ -141,7 +161,7 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
       statusApplied ??= { seat: st, statusId: item.onHitStatus.statusId, turns: applied || item.onHitStatus.turns, ...(applied ? {} : { immune: true }) };
     }
     return { remove: destroyedNow, knock };
-  });
+  }, carriedSeat !== undefined ? { carry: { seat: carriedSeat, dist: BOND_CARRY.returnDist } } : {});
   state.syncCharacters();
 
   // 被打倒的防禦道具壓到人
@@ -199,7 +219,9 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
 
   return {
     type: 'throw',
-    seat,
+    seat: user,
+    ...(seat !== user ? { thrower: seat } : {}),
+    ...(sim.carried ? { carried: sim.carried } : {}),
     itemId: item.id,
     angle,
     power,
@@ -223,15 +245,8 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
 /** 「移動」：把自己射出去換位置；落在別人身上造成傷害並把對方推開 */
 function resolveLeap(state: BattleState, seat: Seat, item: ThrowableDef, angle: number, power: number): ThrowEvent {
   const damages: DamageEntry[] = [];
-  const sim = state.physics.leap(seat, item, angle, power, (target, vel, at) => {
-    const entry = state.dealDamage(target, item.damage, 'direct', seat, undefined, item.id);
-    if (entry) damages.push(entry);
-    const dead = state.fighters[target].hp <= 0;
-    const sp = Math.hypot(vel.x, vel.y);
-    const knockSpeed = 260 + 260 * Math.min(1, sp / Math.max(1, item.maxSpeed));
-    const away = Math.sign(vel.x) || (state.physics.getCharX(target) > state.physics.getCharX(seat) ? 1 : -1);
-    return knockRequest(target, knockSpeed, at.y, vel, dead, item.weightKg ?? 6, state.physics.getCharScale(target), away);
-  });
+  // 移動不會撞人：不扣血、不擊退
+  const sim = state.physics.leap(seat, item, angle, power, () => undefined);
   state.syncCharacters();
   const frameHeals: NonNullable<ThrowEvent['frameHeals']> = [];
   const sleepFrames: NonNullable<ThrowEvent['sleepFrames']> = [];

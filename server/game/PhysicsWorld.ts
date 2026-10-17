@@ -373,7 +373,8 @@ export class PhysicsWorld {
     if (req.leap) {
       // 跳躍：不會轉，撞得到其他人（落在別人身上）
       Body.setInertia(body, Infinity);
-      body.collisionFilter.mask = CAT.world | CAT.bound | (ALL_CHARS & ~charCat(seat));
+      // 移動不會撞到人（直接穿過去；落地太近會自動讓開）
+      body.collisionFilter.mask = CAT.world | CAT.bound;
     }
     Body.setVelocity(body, { x: req.vx / 60, y: req.vy / 60 });
     Body.setAngularVelocity(body, req.omega / 60);
@@ -757,7 +758,11 @@ export class PhysicsWorld {
     angleDeg: number,
     power: number,
     onImpact: (impact: ThrowImpact, impactSpeed: number, impactVel: { x: number; y: number }) => { remove: string[]; knock?: KnockRequest },
-    opts: { stopAtImpact?: boolean } = {},
+    opts: {
+      stopAtImpact?: boolean;
+      /** 丟出去的是隊友（羈絆：鄭霖澤抓連恩）：不會撞到她自己，命中後轉著彈回她原本位置往前 dist 的地方 */
+      carry?: { seat: Seat; dist: number };
+    } = {},
   ): {
     frames: PhysicsFrames;
     impactFrame: number;
@@ -769,6 +774,8 @@ export class PhysicsWorld {
     bounceFrames: number[];
     /** 竹竿倒地睡覺：開始躺、睡飽起來的格數 */
     knockSleep?: { seat: Seat; sleepFrame: number; wakeFrame: number };
+    /** 被丟出去的隊友最後站的位置 */
+    carried?: { seat: Seat; endX: number };
   } {
     // 落地不算結束：繼續彈跳/滾動，之後打到人或防禦道具仍然算命中（傷害依彈跳次數減半）
     let groundHits = 0;
@@ -809,9 +816,12 @@ export class PhysicsWorld {
         // 一開始只撞得到對手（出手點在自己身上）；離開自己的身體後才會打到自己。
         // 自己的防禦道具永遠撞不到。
         // 隊友也打得到；同隊的防禦道具碰不到
-        mask: CAT.world | (ALL_CHARS & ~charCat(seat)) | defCat(1 - teamOf(seat)),
+        mask: CAT.world | (ALL_CHARS & ~charCat(seat) & ~(opts.carry ? charCat(opts.carry.seat) : 0)) | defCat(1 - teamOf(seat)),
       },
     });
+    const carry = opts.carry;
+    let returnEnd = -1;
+    let carriedEndX: number | undefined;
     const selfCat = charCat(seat);
     let selfArmed = false;
     Body.setVelocity(proj, { x: (Math.cos(rad) * speed * dir) / 60, y: (-Math.sin(rad) * speed) / 60 });
@@ -856,7 +866,10 @@ export class PhysicsWorld {
         const contact = pair.collision?.supports?.[0] ?? proj.position;
         if (label.startsWith('def:')) impact = { kind: 'defense', x: contact.x, y: contact.y, defenseUid: label.slice(4), bounces: groundHits };
         else if (label.startsWith('char')) impact = { kind: 'character', x: contact.x, y: contact.y, hitSeat: Number(label.slice(4)) as Seat, bounces: groundHits };
-        else {
+        else if (carry) {
+          // 丟隊友：一碰到地板就彈回去
+          impact = { kind: 'platform', x: contact.x, y: contact.y, bounces: 0 };
+        } else {
           // 碰到地面：記一次彈跳，繼續飛
           const vy = Math.abs(proj.velocity.y) * 60;
           if (vy > 60 || groundHits === 0) {
@@ -922,6 +935,22 @@ export class PhysicsWorld {
           }
           // AI 試算用：只要知道打到哪裡，不必模擬後續
           if (opts.stopAtImpact) break;
+          // 丟隊友：轉著彈回她原本位置往前 dist（不再撞任何東西）
+          if (carry && !projGone) {
+            const d = sideDir(carry.seat);
+            const range = xRangeOf(carry.seat);
+            carriedEndX = this.freeX(carry.seat, Math.min(range[1], Math.max(range[0], this.charX[carry.seat] + d * carry.dist)), d);
+            const T = 1.0;
+            const g = ARENA.gravity * item.gravityScale;
+            const ty = G - item.radius;
+            proj.collisionFilter.mask = 0;
+            proj.frictionAir = 0;
+            const vx = (carriedEndX - proj.position.x) / T,
+              vy = (ty - proj.position.y - 0.5 * g * T * T) / T;
+            Body.setVelocity(proj, { x: vx / 60, y: vy / 60 });
+            Body.setAngularVelocity(proj, (item.spin ?? 0.25) * Math.sign(vx || d));
+            returnEnd = step + Math.round(T / (STEP_MS / 1000));
+          }
         }
         // 彈跳/滾動到停下來、彈太多次或滾太久都沒打到東西 → 算落空
         if (!impact && groundHits > 0) {
@@ -935,8 +964,14 @@ export class PhysicsWorld {
           impact = { kind: 'out', x: proj.position.x, y: proj.position.y };
           continue;
         }
+        // 丟隊友：彈回來落地 → 她站到新位置
+        if (carry && returnEnd > 0 && !projGone && step >= returnEnd) {
+          Composite.remove(this.engine.world, proj);
+          projGone = true;
+          this.moveCarried(carry.seat, carriedEndX!);
+        }
         // 命中後投擲物繼續彈一下，之後消失
-        if (!projGone && impactStep > 0 && step - impactStep >= afterSteps) {
+        if (!carry && !projGone && impactStep > 0 && step - impactStep >= afterSteps) {
           Composite.remove(this.engine.world, proj);
           projGone = true;
         }
@@ -981,7 +1016,48 @@ export class PhysicsWorld {
     if (impactFrame < 0) impactFrame = Math.max(0, frames.count - 1);
     const knockSleep =
       knock && knock.wakeFrame !== undefined && !knock.stayDown ? { seat: knock.seat, sleepFrame: knock.sleepFrame ?? 0, wakeFrame: knock.wakeFrame } : undefined;
-    return { frames, impactFrame, impact: impact ?? { kind: 'out', x: 0, y: 0 }, fell, impactSpeed, crushes, bounceFrames, knockSleep };
+    if (carry && carriedEndX === undefined) {
+      // 沒打到東西就結束（理論上不會）：站回原地
+      carriedEndX = this.charX[carry.seat];
+    }
+    return {
+      frames,
+      impactFrame,
+      impact: impact ?? { kind: 'out', x: 0, y: 0 },
+      fell,
+      impactSpeed,
+      crushes,
+      bounceFrames,
+      knockSleep,
+      ...(carry ? { carried: { seat: carry.seat, endX: r1(carriedEndX!) } } : {}),
+    };
+  }
+
+  /** 戴在頭上的穿戴型道具（鋼盔）uid */
+  wornHelmets(seat: Seat): string[] {
+    const x = this.charX[seat],
+      s = this.cs[seat],
+      G = ARENA.groundY;
+    const out: string[] = [];
+    for (const [uid, info] of this.defs) {
+      const p = info.body.position;
+      if (info.wearable && Math.abs(p.x - x) < 55 * s && p.y < G - 105 * s && p.y > G - 240 * s) out.push(uid);
+    }
+    return out;
+  }
+
+  /** 把角色（和頭上的鋼盔）直接搬到新位置 */
+  private moveCarried(seat: Seat, x: number): void {
+    const dx = x - this.charX[seat];
+    for (const uid of this.wornHelmets(seat)) {
+      const b = this.defs.get(uid)!.body;
+      Body.setPosition(b, { x: b.position.x + dx, y: b.position.y }, false);
+      Body.setVelocity(b, { x: 0, y: 0 });
+    }
+    const body = this.chars[seat];
+    Body.setPosition(body, { x: body.position.x + dx, y: body.position.y }, false);
+    Body.setVelocity(body, { x: 0, y: 0 });
+    this.charX[seat] = x;
   }
 
   /**

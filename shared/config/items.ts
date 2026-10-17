@@ -38,6 +38,10 @@ interface ItemBase {
   exclusiveTo?: string[];
   /** 對手是這些角色時抽不到（角色 id） */
   notVs?: string[];
+  /** 羈絆卡：2v2 時鄭霖澤和連恩同隊（而且都活著）才抽得到 */
+  bondOnly?: boolean;
+  /** 羈絆成立時抽不到（被羈絆卡取代的專屬卡） */
+  notInBond?: boolean;
 }
 
 /** 命中時附加的狀態效果 */
@@ -324,6 +328,7 @@ export const ITEMS: ItemDef[] = [
     placeholder: { shape: 'rect', color: 0x555555 },
     exclusiveTo: ['zhenglinze'],
     notVs: ['lianen'],
+    notInBond: true,
     tags: ['heavy'],
     damage: 25,
     // 一個人：很重，擊退很強
@@ -344,11 +349,11 @@ export const ITEMS: ItemDef[] = [
     id: 'move',
     kind: 'throwable',
     name: '移動',
-    description: '每回合都能選。把自己射出去換位置（最遠 50 m，角度超過 90° 往後跳）。落在別人身上造成 10 傷害並推開。',
+    description: '每回合都能選。把自己射出去換位置（最遠 50 m，角度超過 90° 往後跳）。不會撞到人。',
     icon: 'assets/items/move.png',
     placeholder: { shape: 'circle', color: 0xff9800 },
     tags: ['self'],
-    damage: 10,
+    damage: 0,
     weightKg: 6,
     selfLaunch: true,
     // 不靠抽：每回合固定多出來的選項（見 EXTRA_OPTION）
@@ -358,6 +363,29 @@ export const ITEMS: ItemDef[] = [
     maxSpeed: 822,
     gravityScale: 1,
     radius: 20,
+    explosionRadius: 0,
+    splashMultiplier: 0,
+  },
+  {
+    id: 'lianenGrab',
+    kind: 'throwable',
+    name: '抓取連恩',
+    description: '羈絆卡（2v2 鄭霖澤＋連恩同隊）。鄭霖澤抓起連恩丟出去，她在空中一直轉，命中傷害 50；打中人後連恩扣 10 血（戴著鋼盔就改成鋼盔耐用 -1）。打中或落地後連恩會轉著彈回來，停在她原本位置往前 50 m。',
+    icon: 'assets/items/lianen_throw.png',
+    sprite: 'assets/items/lianen_throw.png',
+    placeholder: { shape: 'rect', color: 0x555555 },
+    exclusiveTo: ['zhenglinze', 'lianen'],
+    bondOnly: true,
+    tags: ['heavy'],
+    damage: 50,
+    weightKg: 40,
+    frictionAir: 0.0004,
+    minSpeed: 380,
+    maxSpeed: 2150,
+    gravityScale: 1.05,
+    radius: 26,
+    displaySize: 100,
+    spin: 0.75,
     explosionRadius: 0,
     splashMultiplier: 0,
   },
@@ -518,6 +546,7 @@ export const ITEMS: ItemDef[] = [
     sprite: 'assets/items/zheng_guard.png',
     placeholder: { shape: 'rect', color: 0xbdb6aa },
     exclusiveTo: ['lianen'],
+    notInBond: true,
     notVs: ['zhenglinze'],
     // 跟一般角色一樣高
     size: { w: 64, h: 150 },
@@ -852,3 +881,6 @@ export function itemTargetsEnemy(item: ItemDef | undefined): boolean {
 
 /** 每回合固定多出來的選項（不靠抽）：移動 */
 export const EXTRA_OPTION = 'move';
+
+/** 羈絆：丟出去的隊友 */
+export const BOND_CARRY = { item: 'lianenGrab', thrower: 'zhenglinze', carried: 'lianen', returnDist: 500, selfDamage: 10 } as const;

@@ -148,6 +148,7 @@ export const CHARACTERS: CharacterDef[] = [
       '弱點：受到的負面效果兩倍（機車鎖除外）：冷氣卡、過期果汁持續回合 ×2；絲襪每層 ×1.4',
       '身上黏著 poopoo恩 時，每回合回復 1 血',
       '專屬卡牌「連恩」：把連恩丟出去（傷害 25，她會在空中快速旋轉）；對手是連恩時抽不到',
+      '羈絆（2v2 和連恩同隊）：上面的「連恩」卡和連恩的「鄭霖澤保鑣」都取消，兩人改抽「抓取連恩」（由鄭霖澤丟出真正的連恩，傷害 50）；連恩受到的傷害一半轉給他、轉過來的再減半',
     ],
     portrait: 'assets/characters/zhenglinze/portrait.png',
     poses: {
@@ -157,7 +158,7 @@ export const CHARACTERS: CharacterDef[] = [
       dead: 'assets/characters/zhenglinze/dead.png',
     },
     knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/zhenglinze/knock${i}.png`),
-    exclusiveItems: ['lianenThrow'],
+    exclusiveItems: ['lianenThrow', 'lianenGrab'],
     placeholder: { color: 0xbdb6aa, accent: 0xf1d3b8 },
   },
   {
@@ -246,8 +247,9 @@ export const CHARACTERS: CharacterDef[] = [
       '自己丟的 poopoo恩 傷害 ×3，而且是一般的 2.5 倍大',
       '抽到 poopoo恩 的機率 ×1.5',
       '專屬卡牌「鄭霖澤保鑣」（對手不是鄭霖澤時）：擋 3 次攻擊，在場時傷害倍率 0.5 → 0.8；他被打中連恩受 20% 傷害；被打倒後喪偶難過，傷害永久 -0.2',
+      '羈絆（2v2 和鄭霖澤同隊）：「鄭霖澤保鑣」取消，改抽「抓取連恩」——鄭霖澤把她丟出去（傷害 50），打中人自己扣 10（戴鋼盔改成鋼盔耐用 -1），最後轉著彈回原位往前 50 m；受到的傷害一半轉給鄭霖澤（轉過去的再減半）',
     ],
-    exclusiveItems: ['zhengGuard'],
+    exclusiveItems: ['zhengGuard', 'lianenGrab'],
     placeholder: { color: 0xf48fb1, accent: 0xf1d3b8 },
   },
   {

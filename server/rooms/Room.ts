@@ -137,8 +137,10 @@ export class Room {
     const seat = this.freeSeat();
     if (seat === null) return;
     const pool = CHARACTERS.filter((c) => c.enabled !== false);
-    const c = pool[Math.floor(Math.random() * pool.length)];
     const n = this.players.filter((p) => p?.bot).length;
+    // 測試用：HILLDUEL_BOT_CHARS=lianen,lixinan 依序指定電腦的角色
+    const forced = process.env.HILLDUEL_BOT_CHARS?.split(',')[n];
+    const c = pool.find((x) => x.id === forced) ?? pool[Math.floor(Math.random() * pool.length)];
     this.players[seat] = {
       seat,
       name: `電腦・${AI_PROFILES[difficulty].label}${this.mode === 'team' ? n + 1 : ''}`,

@@ -3,7 +3,7 @@
 
 import { ARENA } from '../../shared/config/game.js';
 import { bodyScaleOf, traitsOf, type CharacterTraits } from '../../shared/config/characters.js';
-import { getItem, getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
+import { BOND_CARRY, getItem, getStatus, PERMANENT_TURNS, type DefenseDef } from '../../shared/config/items.js';
 import { seatsOf, sideDir, teamOf, type DamageEntry, type DefenseUpdate, type DefenseView, type GameMode, type HealEntry, type Seat, type StatusView, type StuckItem, type Team } from '../../shared/types.js';
 import { startXOf } from '../../shared/physics.js';
 import { PhysicsWorld } from './PhysicsWorld.js';
@@ -65,6 +65,22 @@ export class BattleState {
   /** 還活著的敵人 */
   aliveEnemiesOf(seat: Seat): Seat[] {
     return this.enemiesOf(seat).filter((s) => this.fighters[s].hp > 0);
+  }
+
+  /**
+   * 羈絆：2v2 時鄭霖澤和連恩同隊而且都活著。
+   * team 有給的話只看那一隊。
+   */
+  bond(team?: Team): { thrower: Seat; carried: Seat } | null {
+    if (this.mode !== 'team') return null;
+    for (const t of [0, 1] as Team[]) {
+      if (team !== undefined && t !== team) continue;
+      const mates = this.seats.filter((s) => teamOf(s) === t && this.fighters[s].hp > 0);
+      const thrower = mates.find((s) => this.characterIds[s] === BOND_CARRY.thrower);
+      const carried = mates.find((s) => this.characterIds[s] === BOND_CARRY.carried);
+      if (thrower !== undefined && carried !== undefined) return { thrower, carried };
+    }
+    return null;
   }
 
   /** 隊伍是否全滅 */
@@ -144,6 +160,18 @@ export class BattleState {
     if (cap && raw > cap.at) raw = cap.at + (raw - cap.at) * cap.factor;
     let dmg = Math.max(0, Math.round(raw));
     if (dmg <= 0) return null;
+    // 羈絆（連恩）：受到的傷害一半轉給同隊的鄭霖澤，轉過去的再減半
+    let shareTo: DamageEntry['shareTo'];
+    const b = this.characterIds[seat] === BOND_CARRY.carried ? this.bond(teamOf(seat)) : null;
+    if (b && b.carried === seat) {
+      const half = Math.floor(dmg / 2);
+      dmg -= half;
+      const z = Math.round(half / 2);
+      if (z > 0) {
+        const r = this.applyRaw(b.thrower, z);
+        shareTo = { seat: b.thrower, amount: r.amount, hpAfter: r.hpAfter };
+      }
+    }
     const f = this.fighters[seat];
     // 護盾先吸收
     let shielded = 0;
@@ -168,7 +196,24 @@ export class BattleState {
       ...(statusId ? { statusId } : {}),
       ...(survived ? { survived } : {}),
       ...(shielded ? { shielded } : {}),
+      ...(shareTo ? { shareTo } : {}),
     };
+  }
+
+  /** 直接扣血（不再套任何倍率）：護盾先擋 */
+  private applyRaw(seat: Seat, dmg: number): { amount: number; hpAfter: number } {
+    const f = this.fighters[seat];
+    if (f.shield && f.shield > 0) {
+      const s = Math.min(f.shield, dmg);
+      f.shield -= s;
+      dmg -= s;
+    }
+    f.hp = Math.max(0, f.hp - dmg);
+    if (f.hp <= 0 && this.traits(seat).surviveOnce && !f.survivedOnce) {
+      f.hp = 1;
+      f.survivedOnce = true;
+    }
+    return { amount: dmg, hpAfter: f.hp };
   }
 
   /**

@@ -9,7 +9,7 @@
 
 import * as Phaser from 'phaser';
 import { AIM_CONFIG, ARENA, CAMERA } from '../../../shared/config/game.js';
-import { getItem, itemTargetsEnemy, type DefenseDef } from '../../../shared/config/items.js';
+import { BOND_CARRY, getItem, itemTargetsEnemy, type DefenseDef } from '../../../shared/config/items.js';
 import { bodyScaleOf, getCharacter, scaledDefenseSize } from '../../../shared/config/characters.js';
 import { characterHitbox, defenseRect, launchPoint, startXOf } from '../../../shared/physics.js';
 import {
@@ -187,6 +187,14 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  /** 這回合實際出手的人：羈絆卡「抓取連恩」由同隊的鄭霖澤丟 */
+  private throwerOf(seat: Seat, itemId: string | null | undefined): Seat {
+    const snap = store.snapshot;
+    if (itemId !== BOND_CARRY.item || snap?.mode !== 'team') return seat;
+    const z = this.seats().find((s) => teamOf(s) === teamOf(seat) && snap.players[s]?.characterId === BOND_CARRY.thrower && (snap.players[s]?.hp ?? 0) > 0);
+    return z ?? seat;
+  }
+
   /** 這場的所有座位 */
   private seats(): Seat[] {
     return (store.snapshot?.players ?? [null, null]).map((_, i) => i as Seat);
@@ -250,7 +258,7 @@ export class BattleScene extends Phaser.Scene {
     const t = snap.turn;
     for (const seat of this.seats()) {
       if (this.chars[seat]?.isDead) continue;
-      const aiming = !!t && t.activeSeat === seat && (t.phase === 'aimAngle' || t.phase === 'aimPower');
+      const aiming = !!t && this.throwerOf(t.activeSeat, t.chosenItemId) === seat && (t.phase === 'aimAngle' || t.phase === 'aimPower');
       this.chars[seat]?.setBase(aiming ? 'throw' : 'idle');
       // 不在瞄準、也沒有在播投擲動畫：轉回面向敵人
       if (!aiming && this.animating === 0) this.chars[seat]?.setBack(false);
@@ -433,6 +441,10 @@ export class BattleScene extends Phaser.Scene {
             this.hitCharacter(d.seat);
             this.hud.setHp(d.seat, d.hpAfter);
             if (d.survived) floatingText(this, this.xOf(d.seat), ARENA.groundY - 260, '鎖血！剩 1 血', '#ffeb3b');
+            if (d.shareTo) {
+              damageNumber(this, this.xOf(d.shareTo.seat), d.shareTo.amount, '#ce93d8', '羈絆分擔', '-');
+              this.hud.setHp(d.shareTo.seat, d.shareTo.hpAfter);
+            }
           }
           for (const h of e.heals ?? []) {
             damageNumber(this, this.xOf(h.seat), h.amount, '#69f0ae', h.seat !== undefined && store.snapshot?.players[h.seat]?.characterId === 'panbohan' ? '抽菸回血' : '便便回血', '+');
@@ -555,7 +567,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean; survived?: boolean; shielded?: number; label?: string; self?: boolean; ally?: boolean }[]): void {
+  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean; survived?: boolean; shielded?: number; label?: string; self?: boolean; ally?: boolean; shareTo?: { seat: Seat; amount: number; hpAfter: number } }[]): void {
     for (const d of damages) {
       if (d.source === 'crush') {
         sfx.play('crush');
@@ -586,6 +598,11 @@ export class BattleScene extends Phaser.Scene {
         d.source === 'direct',
       );
       if (d.shielded) floatingText(this, this.xOf(d.seat), ARENA.groundY - 230, `護盾擋下 ${d.shielded}`, '#90caf9');
+      // 羈絆：連恩的傷害一部分轉給鄭霖澤
+      if (d.shareTo) {
+        damageNumber(this, this.xOf(d.shareTo.seat), d.shareTo.amount, '#ce93d8', '羈絆分擔', '-');
+        this.hud.setHp(d.shareTo.seat, d.shareTo.hpAfter);
+      }
       if (d.label && d.source === 'status') {
         damageNumber(this, this.xOf(d.seat), d.amount, '#ffab91', d.label, '-');
         this.hud.setHp(d.seat, d.hpAfter);
@@ -754,12 +771,27 @@ export class BattleScene extends Phaser.Scene {
     this.aim.hide();
     const item = getItem(e.itemId);
     const key = this.textures.exists(projKey(e.itemId)) ? projKey(e.itemId) : iconKey(e.itemId);
-    const lp = launchPoint(e.seat, this.xOf(e.seat), this.scaleOf(e.seat), e.angle);
+    const thrower = e.thrower ?? e.seat;
+    const lp = launchPoint(thrower, this.xOf(thrower), this.scaleOf(thrower), e.angle);
     // 往後丟：角色轉身
-    this.chars[e.seat]?.setBack(e.angle > 90);
+    this.chars[thrower]?.setBack(e.angle > 90);
     const start = e.frames.p?.[0] ?? [lp.x, lp.y, 0];
-    this.focusSeat(e.seat, 5);
-    this.chars[e.seat]?.flash('throw', 450);
+    this.focusSeat(thrower, 5);
+    this.chars[thrower]?.flash('throw', 450);
+    // 羈絆：被丟出去的隊友（連恩）先藏起來，畫面上飛的是她；頭上的鋼盔也先藏
+    const carried = e.carried;
+    const hiddenHelmets: DefenseSprite[] = [];
+    if (carried) {
+      this.chars[carried.seat]?.setVisible(false);
+      const cx = this.xOf(carried.seat);
+      for (const ds of this.defenses.values()) {
+        const def = getItem(ds.view.itemId);
+        if (def?.kind === 'defense' && def.wearable && Math.abs(ds.root.x - cx) < 60 && ds.root.y < ARENA.groundY - 60) {
+          ds.root.setVisible(false);
+          hiddenHelmets.push(ds);
+        }
+      }
+    }
     await wait(this, 140); // 出手前的一點點蓄勢
     const proj = this.add.image(start[0], start[1], key).setDepth(46);
     // 移動：飛出去的是自己，不畫投擲物
@@ -843,6 +875,12 @@ export class BattleScene extends Phaser.Scene {
     this.speedLines.stop();
     this.knockedSeats.clear();
     proj.destroy();
+    if (carried) {
+      this.chars[carried.seat]?.placeAt(carried.endX);
+      this.chars[carried.seat]?.setVisible(true);
+      hiddenHelmets.forEach((ds) => ds.root.active && ds.root.setVisible(true));
+      puff(this, carried.endX, ARENA.groundY);
+    }
     this.tweens.add({ targets: trail, alpha: 0, duration: 400, onComplete: () => trail.destroy() });
     // 沒被影格處理到的（例如沒被打壞但扣了次數）更新標籤
     this.applyDefenseUpdates(e.defenseUpdates.filter((u) => !u.destroyed));
@@ -966,7 +1004,7 @@ export class BattleScene extends Phaser.Scene {
     // 輪到誰，鏡頭就在誰那邊（動畫播放中由動畫自己控制鏡頭）
     if (this.animating === 0 && t.phase !== 'resolving') {
       if (t.phase === 'target' && getItem(t.chosenItemId ?? '')?.kind === 'functional') this.focusBoth();
-      else this.focusSeat(t.activeSeat);
+      else this.focusSeat(this.throwerOf(t.activeSeat, t.chosenItemId));
     }
 
     switch (t.phase) {
@@ -1083,8 +1121,9 @@ export class BattleScene extends Phaser.Scene {
         this.localPower = Math.min(AIM_CONFIG.maxPower, AIM_CONFIG.minPower + elapsed / AIM_CONFIG.chargeSeconds);
         sfx.charge(this.localPower);
       }
-      this.aim.draw(t.activeSeat, this.xOf(t.activeSeat), this.localAngle, this.charging ? this.localPower : null, this.scaleOf(t.activeSeat));
-      this.chars[t.activeSeat]?.setBack((this.localAngle ?? 0) > 90);
+      const th = this.throwerOf(t.activeSeat, t.chosenItemId);
+      this.aim.draw(th, this.xOf(th), this.localAngle, this.charging ? this.localPower : null, this.scaleOf(th));
+      this.chars[th]?.setBack((this.localAngle ?? 0) > 90);
       // 把瞄準狀態即時分享給對手（每秒 10 次）
       if (time - this.lastPreviewSent > 100) {
         this.lastPreviewSent = time;
@@ -1095,8 +1134,9 @@ export class BattleScene extends Phaser.Scene {
         });
       }
     } else {
-      this.aim.draw(t.activeSeat, this.xOf(t.activeSeat), this.previewAngle, this.previewPower, this.scaleOf(t.activeSeat));
-      this.chars[t.activeSeat]?.setBack((this.previewAngle ?? 0) > 90);
+      const th = this.throwerOf(t.activeSeat, t.chosenItemId);
+      this.aim.draw(th, this.xOf(th), this.previewAngle, this.previewPower, this.scaleOf(th));
+      this.chars[th]?.setBack((this.previewAngle ?? 0) > 90);
     }
   }
 
@@ -1142,8 +1182,9 @@ export class BattleScene extends Phaser.Scene {
 
   /** 由游標/手指位置換算投擲角度（以出手點為中心，朝向對手） */
   private aimAt(x: number, y: number): void {
-    const seat = store.mySeat;
-    if (seat === null) return;
+    if (store.mySeat === null) return;
+    // 羈絆卡：從鄭霖澤的位置瞄準
+    const seat = this.throwerOf(store.mySeat, store.snapshot?.turn?.chosenItemId);
     // 以角色身體中線為中心算角度（出手點會跟著轉身換邊，不能拿來算，不然在 90° 附近會跳來跳去）
     const lp = launchPoint(seat, this.xOf(seat), this.scaleOf(seat));
     const dir = sideDir(seat);

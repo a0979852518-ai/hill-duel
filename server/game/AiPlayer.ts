@@ -8,7 +8,7 @@
 // ============================================================
 
 import { ARENA } from '../../shared/config/game.js';
-import { getItem, type DefenseDef, type ItemDef, type ThrowableDef } from '../../shared/config/items.js';
+import { BOND_CARRY, getItem, type DefenseDef, type ItemDef, type ThrowableDef } from '../../shared/config/items.js';
 import { headLineY } from '../../shared/physics.js';
 import { itemScaleFor } from '../../shared/config/characters.js';
 import { sideDir, teamOf, type AiDifficulty, type Seat } from '../../shared/types.js';
@@ -314,7 +314,12 @@ export class AiPlayer {
     // 連恩的 poopoo恩比較大：試算也要用一樣的大小
     const s = itemScaleFor(this.battle.state.characterIds[this.seat], item.id);
     const it = s === 1 ? item : { ...item, radius: item.radius * s };
-    const res = w.throwProjectile(this.seat, it, angle, power, () => ({ remove: [] }), { stopAtImpact: true });
+    // 羈絆卡：從鄭霖澤手上丟出連恩
+    const bond = item.id === BOND_CARRY.item ? this.battle.state.bond(teamOf(this.seat)) : null;
+    const res = w.throwProjectile(bond?.thrower ?? this.seat, it, angle, power, () => ({ remove: [] }), {
+      stopAtImpact: true,
+      ...(bond ? { carry: { seat: bond.carried, dist: BOND_CARRY.returnDist } } : {}),
+    });
     return res.impact;
   }
 

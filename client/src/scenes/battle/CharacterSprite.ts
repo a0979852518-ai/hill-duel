@@ -91,6 +91,11 @@ export class CharacterSprite {
 
 
   /** 直接放到某個位置（快照同步用） */
+  /** 整個角色（含名字、影子）顯示 / 隱藏（羈絆：連恩被丟出去時） */
+  setVisible(v: boolean): void {
+    this.root.setVisible(v);
+  }
+
   placeAt(x: number): void {
     this.endKnock();
     this.x = x;

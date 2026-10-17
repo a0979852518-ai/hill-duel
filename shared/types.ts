@@ -190,6 +190,8 @@ export interface DamageEntry {
   self?: boolean;
   /** 打到隊友 */
   ally?: boolean;
+  /** 羈絆：這次傷害有一部分轉給隊友（連恩 → 鄭霖澤） */
+  shareTo?: { seat: Seat; amount: number; hpAfter: number };
 }
 
 export interface HealEntry {
@@ -243,6 +245,9 @@ export type BattleEvent =
       hu?: boolean;
       /** 防禦道具倒下壓到主人時改成回血（獸控），frame = 第幾格 */
       crushHeals?: { seat: Seat; amount: number; hpAfter: number; frame: number; uid: string }[];
+      /** 羈絆：誰把東西丟出去（不是出手的人時才有）、被丟出去的隊友最後站在哪 */
+      thrower?: Seat;
+      carried?: { seat: Seat; endX: number };
       /** 這次黏到誰身上（poopoo恩） */
       stuck?: { seat: Seat; item: StuckItem };
     }
