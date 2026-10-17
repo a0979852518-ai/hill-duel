@@ -30,8 +30,9 @@ export function defenseRect(d: Pick<DefenseView, 'x' | 'y' | 'w' | 'h'>): Rect {
   return { x: d.x - d.w / 2, y: d.y - d.h / 2, w: d.w, h: d.h };
 }
 
-export function launchPoint(seat: Seat, feetX: number, scale = 1): { x: number; y: number } {
-  const dir = sideDir(seat);
+export function launchPoint(seat: Seat, feetX: number, scale = 1, angle = 0): { x: number; y: number } {
+  // 角度超過 90°：角色轉身，出手點換到身後那一側
+  const dir = sideDir(seat) * (angle > 90 ? -1 : 1);
   return { x: feetX + ARENA.launchOffset.x * dir * scale, y: ARENA.groundY + ARENA.launchOffset.y * scale };
 }
 

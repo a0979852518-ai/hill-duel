@@ -363,7 +363,7 @@ export class AimDisplay {
       this.label.setVisible(false);
       return;
     }
-    const lp = launchPoint(seat, feetX, bodyScale);
+    const lp = launchPoint(seat, feetX, bodyScale, angle);
     const dir = sideDir(seat);
     const rad = Phaser.Math.DegToRad(angle);
     const ux = Math.cos(rad) * dir,

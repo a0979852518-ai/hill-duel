@@ -129,7 +129,7 @@ export class CharacterSprite {
   /** 把站姿座標換算到目前的圖上（站著 / 被打飛的動作圖） */
   private layoutStuck(): void {
     if (this.stuck.length === 0) return;
-    const facing = sideDir(this.seat);
+    const facing = sideDir(this.seat) * (this.back ? -1 : 1);
     const H = this.standHeight;
     // 腳 F → 頭頂 T 的身體軸線（body 容器座標）
     let F = { x: 0, y: 0 },
@@ -157,8 +157,19 @@ export class CharacterSprite {
     }
   }
 
+  /** 轉身（往後丟的時候面向身後） */
+  private back = false;
+  setBack(back: boolean): void {
+    if (this.back === back) return;
+    this.back = back;
+    this.img.setFlipX((sideDir(this.seat) < 0) !== back);
+    this.layoutStuck();
+  }
+
   /** 擊退影格：腳底 x、離地位移（負 = 往上）、傾斜角 */
   setKnockPose(x: number, yOff: number, tilt: number, flip = 1, frame = 0): void {
+    // 被打飛的動作圖是照原本面向畫的：先轉回來
+    this.setBack(false);
     this.x = x;
     this.root.x = x;
     this.body.y = yOff;
@@ -248,6 +259,7 @@ export class CharacterSprite {
   }
 
   die(animate = true): void {
+    this.setBack(false);
     this.overrideTimer?.remove();
     this.overrideTimer = null;
     this.knockFrame = 0;

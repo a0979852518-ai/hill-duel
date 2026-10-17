@@ -31,6 +31,8 @@ const charCat = (seat: number) => 0x0100 << seat;
 /** 防禦道具（依隊伍）：0x0002、0x0004 */
 const defCat = (team: number) => 0x0002 << team;
 const ALL_CHARS = 0x0f00;
+/** 兩個角色腳底至少要隔多遠（不會疊在一起） */
+const CHAR_GAP = 64;
 
 /** 翻滾身體：寬 × 高（膠囊形，圓角讓它會滾） */
 const TUMBLE = { w: 44, h: 150, r: 20 };
@@ -404,6 +406,29 @@ export class PhysicsWorld {
     return k;
   }
 
+  /**
+   * 角色不能疊在一起：停下來的位置離其他人太近，就往原本移動的方向（擠不下就往反方向）讓開。
+   * 已陣亡離場的人不算。
+   */
+  private freeX(seat: Seat, x: number, dir: number): number {
+    const range = xRangeOf(seat);
+    const others = this.seats().filter((s) => s !== seat && !this.gone[s]);
+    const gap = (s: Seat) => (CHAR_GAP * (this.cs[seat] + this.cs[s])) / 2;
+    const clash = (px: number) => others.find((s) => Math.abs(px - this.charX[s]) < gap(s));
+    const tryDir = (d: number): number | null => {
+      let px = x;
+      for (let i = 0; i < 8; i++) {
+        const o = clash(px);
+        if (o === undefined) return px;
+        px = this.charX[o] + d * gap(o);
+        if (px < range[0] || px > range[1]) return null;
+      }
+      return null;
+    };
+    const d = dir === 0 ? -sideDir(seat) : Math.sign(dir);
+    return tryDir(d) ?? tryDir(-d) ?? x;
+  }
+
   /** 敵隊所有角色的碰撞分類 */
   private enemyChars(seat: Seat): number {
     let m = 0;
@@ -479,7 +504,7 @@ export class PhysicsWorld {
       // 一碰到地就算落地（不然會被彈起來多飛一段，距離忽長忽短）
       const landed = k.airborne && lowest >= ARENA.groundY - 4;
       if (landed || (!k.airborne && k.t > 0.35) || k.t > 3) {
-        k.endX = Math.min(range[1], Math.max(range[0], b.position.x));
+        k.endX = this.freeX(k.seat, Math.min(range[1], Math.max(range[0], b.position.x)), Math.sign(b.velocity.x));
         Composite.remove(this.engine.world, b);
         this.moveCharHidden(k.seat, k.endX);
         this.hideChar(k.seat, false);
@@ -530,7 +555,7 @@ export class PhysicsWorld {
     if (k.phase === 'roll') {
       if (k.t * 1000 >= this.rollMs(k)) {
         k.from = this.knockPose(k);
-        k.endX = Math.min(range[1], Math.max(range[0], k.com.x + k.away * k.halfRolls * this.rollStep()));
+        k.endX = this.freeX(k.seat, Math.min(range[1], Math.max(range[0], k.com.x + k.away * k.halfRolls * this.rollStep())), k.away);
         k.from = [k.endX, 0, 0, 1, 5];
         k.phase = 'lie';
         k.t = 0;
@@ -768,7 +793,7 @@ export class PhysicsWorld {
     const crushed = new Set<string>();
     const last = this.snapshotPoses();
     const dir = sideDir(seat);
-    const lp = launchPoint(seat, this.charX[seat], this.cs[seat]);
+    const lp = launchPoint(seat, this.charX[seat], this.cs[seat], angleDeg);
     const p = Math.min(1, Math.max(0, power));
     const speed = item.minSpeed + (item.maxSpeed - item.minSpeed) * p; // px/s
     const rad = (angleDeg * Math.PI) / 180;
@@ -936,7 +961,7 @@ export class PhysicsWorld {
       // 安全措施：時間到還沒結束就直接站好（或趴著）
       if (knock.phase === 'tumble') {
         const range = xRangeOf(knock.seat);
-        knock.endX = Math.min(range[1], Math.max(range[0], knock.body.position.x));
+        knock.endX = this.freeX(knock.seat, Math.min(range[1], Math.max(range[0], knock.body.position.x)), knock.away);
         Composite.remove(this.engine.world, knock.body);
       }
       this.moveCharHidden(knock.seat, knock.endX);
@@ -1034,7 +1059,7 @@ export class PhysicsWorld {
       if (k.done) continue;
       if (k.body && Composite.get(this.engine.world, k.body.id, 'body')) Composite.remove(this.engine.world, k.body);
       const range = xRangeOf(k.seat);
-      k.endX = Math.min(range[1], Math.max(range[0], k.body?.position.x ?? k.endX));
+      k.endX = this.freeX(k.seat, Math.min(range[1], Math.max(range[0], k.body?.position.x ?? k.endX)), k.away);
       this.moveCharHidden(k.seat, k.endX);
       if (!k.stayDown) this.hideChar(k.seat, false);
       k.done = true;

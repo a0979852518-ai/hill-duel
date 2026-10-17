@@ -252,6 +252,8 @@ export class BattleScene extends Phaser.Scene {
       if (this.chars[seat]?.isDead) continue;
       const aiming = !!t && t.activeSeat === seat && (t.phase === 'aimAngle' || t.phase === 'aimPower');
       this.chars[seat]?.setBase(aiming ? 'throw' : 'idle');
+      // 不在瞄準、也沒有在播投擲動畫：轉回面向敵人
+      if (!aiming && this.animating === 0) this.chars[seat]?.setBack(false);
     }
   }
 
@@ -752,7 +754,9 @@ export class BattleScene extends Phaser.Scene {
     this.aim.hide();
     const item = getItem(e.itemId);
     const key = this.textures.exists(projKey(e.itemId)) ? projKey(e.itemId) : iconKey(e.itemId);
-    const lp = launchPoint(e.seat, this.xOf(e.seat), this.scaleOf(e.seat));
+    const lp = launchPoint(e.seat, this.xOf(e.seat), this.scaleOf(e.seat), e.angle);
+    // 往後丟：角色轉身
+    this.chars[e.seat]?.setBack(e.angle > 90);
     const start = e.frames.p?.[0] ?? [lp.x, lp.y, 0];
     this.focusSeat(e.seat, 5);
     this.chars[e.seat]?.flash('throw', 450);
@@ -1080,6 +1084,7 @@ export class BattleScene extends Phaser.Scene {
         sfx.charge(this.localPower);
       }
       this.aim.draw(t.activeSeat, this.xOf(t.activeSeat), this.localAngle, this.charging ? this.localPower : null, this.scaleOf(t.activeSeat));
+      this.chars[t.activeSeat]?.setBack((this.localAngle ?? 0) > 90);
       // 把瞄準狀態即時分享給對手（每秒 10 次）
       if (time - this.lastPreviewSent > 100) {
         this.lastPreviewSent = time;
@@ -1091,6 +1096,7 @@ export class BattleScene extends Phaser.Scene {
       }
     } else {
       this.aim.draw(t.activeSeat, this.xOf(t.activeSeat), this.previewAngle, this.previewPower, this.scaleOf(t.activeSeat));
+      this.chars[t.activeSeat]?.setBack((this.previewAngle ?? 0) > 90);
     }
   }
 
@@ -1138,12 +1144,15 @@ export class BattleScene extends Phaser.Scene {
   private aimAt(x: number, y: number): void {
     const seat = store.mySeat;
     if (seat === null) return;
+    // 以角色身體中線為中心算角度（出手點會跟著轉身換邊，不能拿來算，不然在 90° 附近會跳來跳去）
     const lp = launchPoint(seat, this.xOf(seat), this.scaleOf(seat));
     const dir = sideDir(seat);
-    const dx = (x - lp.x) * dir,
+    const dx = (x - this.xOf(seat)) * dir,
       dy = lp.y - y;
     if (Math.hypot(dx, dy) < 12) return; // 太靠近出手點時角度會亂跳
-    const deg = Phaser.Math.RadToDeg(Math.atan2(dy, dx));
+    let deg = Phaser.Math.RadToDeg(Math.atan2(dy, dx));
+    // 指到身後偏下方：當成往後水平丟
+    if (deg < -90) deg = AIM_CONFIG.maxAngle;
     this.localAngle = Phaser.Math.Clamp(deg, AIM_CONFIG.minAngle, AIM_CONFIG.maxAngle);
   }
 
