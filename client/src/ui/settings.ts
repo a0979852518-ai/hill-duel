@@ -2,18 +2,15 @@
 
 import { sfx } from '../game/sfx.js';
 
+let open: (() => void) | null = null;
+
+/** 打開設定（主選單的「⚙ 設定」按鈕呼叫） */
+export function openSettings(): void {
+  open?.();
+}
+
 export function setupSettings(): void {
   const app = document.getElementById('app')!;
-  const gear = document.createElement('button');
-  gear.className = 'gear-btn';
-  gear.textContent = '⚙';
-  gear.title = '設定';
-  gear.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggle();
-  });
-  app.appendChild(gear);
-
   let panel: HTMLElement | null = null;
   const toggle = () => {
     if (panel) {
@@ -54,4 +51,5 @@ export function setupSettings(): void {
     });
     app.appendChild(panel);
   };
+  open = toggle;
 }

@@ -264,14 +264,7 @@ body.mobile .join-row .btn { flex: none; padding-left: 16px; padding-right: 16px
 /* 瞄準時避免手指拖曳造成頁面捲動或縮放 */
 #game, #game canvas { touch-action: none; }
 
-/* 設定齒輪（畫面左側中間，不擋到血條與操作按鈕） */
-.gear-btn {
-  position: fixed; left: 12px; top: 50%; transform: translateY(-50%); z-index: 20;
-  width: 40px; height: 40px; border-radius: 50%;
-  border: 3px solid var(--ink); background: #fff8ea; font-size: 22px; line-height: 1;
-  cursor: pointer; box-shadow: 0 3px 0 var(--ink); padding: 0; color: var(--ink);
-}
-.gear-btn:active { transform: translateY(calc(-50% + 3px)); box-shadow: 0 0 0 var(--ink); }
+/* 設定面板（主選單的「⚙ 設定」按鈕打開） */
 .settings-wrap { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; background: rgba(20, 25, 35, 0.45); padding: 16px; }
 .panel.settings { width: min(380px, 100%); }
 .set-row { display: grid; grid-template-columns: 64px 1fr 36px; align-items: center; gap: 10px; margin: 10px 0; font-weight: 800; }
@@ -286,3 +279,7 @@ body.mobile.short .set-row { margin: 4px 0; }
 .sel-actions { display: flex; gap: 10px; }
 .sel-actions .btn[data-act=confirm] { flex: 1; }
 body.mobile .sel-foot .btn[data-act=back] { min-width: 0; }
+
+.settings-btn { margin-top: 10px; }
+body.mobile .menu-col .settings-btn { margin-top: 14px; }
+body.mobile.short .menu-col .settings-btn { margin-top: 8px; }

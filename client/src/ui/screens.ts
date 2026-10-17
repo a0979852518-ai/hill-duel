@@ -7,6 +7,7 @@ import { ERROR_TEXT, type AiDifficulty, type ErrorCode, type RoomSnapshot, type 
 import { loadName } from '../net/Network.js';
 import { store } from '../state/store.js';
 import { toast } from './toast.js';
+import { openSettings } from './settings.js';
 
 const ui = () => document.getElementById('ui')!;
 
@@ -43,6 +44,7 @@ const DESKTOP_MENU = (message?: string) => `
         <input id="name" maxlength="12" placeholder="輸入暱稱" value="${esc(loadName())}" />
       </div>
       <button class="btn block" data-act="match">隨機匹配對手</button>
+      <button class="btn secondary block settings-btn" data-act="settings">⚙ 設定（音量、怪誕 bug）</button>
       <div class="divider">或跟朋友玩</div>
       <button class="btn secondary block" data-act="create">創建房間</button>
       <div class="divider">或</div>
@@ -88,6 +90,7 @@ const MOBILE_MENU = (message?: string) => `
             <input id="code" class="code" maxlength="6" placeholder="ABC123" autocomplete="off" aria-label="朋友給你的房號" />
             <button class="btn secondary" data-act="join">加入</button>
           </div>
+          <button class="btn secondary block settings-btn" data-act="settings">⚙ 設定</button>
         </div>
       </div>
       <div class="error" data-err>${message ? esc(message) : ''}</div>
@@ -112,6 +115,7 @@ export function showMenu(message?: string): void {
     if (!res.ok) err.textContent = errText(res.error);
     else window.dispatchEvent(new CustomEvent('hillduel:route'));
   });
+  el.querySelector('[data-act=settings]')!.addEventListener('click', () => openSettings());
   el.querySelector('[data-act=match]')!.addEventListener('click', async () => {
     lock(true);
     err.textContent = '';

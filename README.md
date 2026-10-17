@@ -200,7 +200,7 @@ Socket.IO 需要一直開著的 Node 伺服器，GitHub Pages 這類純靜態空
 
 ## 7.6 設定與怪誕 bug
 
-畫面左側的 **⚙ 齒輪**：總音量、音效、音樂（程式合成的 8-bit 背景音樂，`client/src/game/music.ts`）三個拉桿，和「怪誕 bug」開關，設定記在這台裝置上。
+主選單的 **⚙ 設定** 按鈕：總音量、音效、音樂（程式合成的 8-bit 背景音樂，`client/src/game/music.ts`）三個拉桿，和「怪誕 bug」開關，設定記在這台裝置上。
 
 **怪誕 bug**（預設開啟，純視覺、只在自己畫面上，不影響傷害與勝負，`client/src/scenes/battle/glitches.ts`）：
 - 回合開始約 12% 機率：角色頭下腳上（重力反轉？）、名字變亂碼、原地轉一圈（物理引擎抽筋）、或跳出「這不是 bug，是 feature 🐛」

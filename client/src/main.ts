@@ -20,7 +20,7 @@ setupSettings();
 music.start();
 document.addEventListener('click', (e) => {
   const el = e.target as HTMLElement | null;
-  if (el && !el.closest('.gear-btn') && el.closest('button, .char-card')) sfx.play('click');
+  if (el && el.closest('button, .char-card')) sfx.play('click');
 });
 
 const net = new Network();

@@ -118,6 +118,11 @@ export const SOUNDS: Record<string, Layer[]> = {
     L([0.7, 0.1, 140, 0, 0.02, 0.06, 4, 1, 0, 0, 0, 0, 0, 0.8, 0, 0, 0, 1, 0, 0, -1500], 0.32),
     L([0.6, 0, 880, 0, 0.1, 0.4, 0, 1, 0, 0, 440, 0.08], 0.5),
   ],
+  // 怪誕 bug：數位雜訊＋音高亂跳（像卡帶壞掉）
+  glitch: [
+    L([1, 0.3, 300, 0, 0.25, 0.15, 2, 1, 0, 0, 900, 0.05, 0.04, 2, 0, 0.6]),
+    L([0.7, 0.2, 1400, 0, 0.12, 0.1, 5, 1, -60, 0, -700, 0.06, 0.03, 0, 30, 0.4], 0.18),
+  ],
   status: [L([0.5, 0.05, 400, 0, 0.15, 0.2, 2, 1, -6, 0, 0, 0, 0, 0, 4])],
 };
 
@@ -190,7 +195,10 @@ class Sfx {
       const comp = this.ctx.createDynamicsCompressor();
       comp.threshold.value = -14;
       comp.ratio.value = 6;
-      this.master.connect(comp).connect(this.ctx.destination);
+      // 壓縮後再補一點增益：整體更大聲但不會爆音
+      const makeup = this.ctx.createGain();
+      makeup.gain.value = 1.8;
+      this.master.connect(comp).connect(makeup).connect(this.ctx.destination);
     } catch {
       this.ctx = null;
     }
@@ -213,9 +221,9 @@ class Sfx {
     if (!this.master || !this.sfxBus || !this.musicBus) return;
     // 音量用平方曲線，拉桿中段聽起來比較線性
     const v = (x: number) => Math.max(0, Math.min(1, x)) ** 2;
-    this.master.gain.value = v(this.settings.master) * 0.7;
+    this.master.gain.value = v(this.settings.master) * 1.1;
     this.sfxBus.gain.value = v(this.settings.sfx);
-    this.musicBus.gain.value = v(this.settings.music) * 0.35;
+    this.musicBus.gain.value = v(this.settings.music) * 0.6;
   }
 
   get context(): AudioContext | null {

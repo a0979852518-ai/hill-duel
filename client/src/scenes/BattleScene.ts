@@ -10,7 +10,7 @@
 import * as Phaser from 'phaser';
 import { AIM_CONFIG, ARENA, CAMERA } from '../../../shared/config/game.js';
 import { getItem, ITEMS, type DefenseDef } from '../../../shared/config/items.js';
-import { glitch, GLITCH_LINES } from './battle/glitches.js';
+import { glitch, glitchText, GLITCH_LINES } from './battle/glitches.js';
 import { bodyScaleOf, getCharacter, scaledDefenseSize } from '../../../shared/config/characters.js';
 import { characterHitbox, defenseRect, launchPoint } from '../../../shared/physics.js';
 import {
@@ -360,19 +360,20 @@ export class BattleScene extends Phaser.Scene {
     const pick = (Math.random() * 4) | 0;
     if (pick === 0) {
       c.glitchUpsideDown(true);
-      floatingText(this, x, ARENA.groundY - 220, '重力反轉？', '#e1bee7');
+      glitchText(this, x, ARENA.groundY - 230, '重力反轉？');
     } else if (pick === 1) {
       c.glitchName(true);
+      glitchText(this, x, ARENA.groundY - 230, '名字讀取失敗');
     } else if (pick === 2) {
       this.time.delayedCall(600, () => c.glitchSpin());
-      floatingText(this, x, ARENA.groundY - 220, '物理引擎抽筋', '#e1bee7');
-    } else toast(GLITCH_LINES[(Math.random() * 3) | 0]);
+      glitchText(this, x, ARENA.groundY - 230, '物理引擎抽筋');
+    } else glitchText(this, x, ARENA.groundY - 260, GLITCH_LINES[(Math.random() * 3) | 0]);
   }
 
   private hitCharacter(seat: Seat, strong = false): void {
     if (glitch(0.06)) {
       this.chars[seat]?.glitchStretch();
-      floatingText(this, this.xOf(seat), ARENA.groundY - 250, '模型拉伸', '#e1bee7');
+      glitchText(this, this.xOf(seat), ARENA.groundY - 260, '模型拉伸');
     }
     if (this.knockedSeats.has(seat)) this.chars[seat]?.hitFlash();
     else this.chars[seat]?.hurt(strong);
@@ -569,7 +570,7 @@ export class BattleScene extends Phaser.Scene {
       } else if (d.source === 'status') sfx.play('oof', { vol: 0.5, rate: 1.1 });
       const critTag = d.crit ? '爆擊！' : '';
       // 怪誕 bug：傷害數字先跳一個 NaN
-      if (d.amount > 0 && glitch(0.05)) floatingText(this, this.xOf(d.seat) + 60, ARENA.groundY - 200, '-NaN', '#bdbdbd');
+      if (d.amount > 0 && glitch(0.05)) glitchText(this, this.xOf(d.seat) + 70, ARENA.groundY - 210, '-NaN');
       damageNumber(
         this,
         this.xOf(d.seat),
@@ -788,7 +789,7 @@ export class BattleScene extends Phaser.Scene {
           if (other && this.textures.exists(iconKey(other.id))) {
             proj.setTexture(iconKey(other.id));
             fitInto(proj, 48);
-            floatingText(this, x, y - 50, '貼圖讀錯了', '#e1bee7');
+            glitchText(this, x, y - 60, '貼圖讀錯了');
           }
         }
         this.director.follow(x, y, vx, vy);
