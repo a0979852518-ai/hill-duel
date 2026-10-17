@@ -20,6 +20,8 @@ export interface FighterState {
   survivedOnce?: boolean;
   /** 竹竿：投擲連續直接命中次數、胡了（下次抽牌必出麻將）、手辦被毀的憤怒加成 */
   hitStreak?: number;
+  /** 護盾（先擋傷害） */
+  shield?: number;
   huReady?: boolean;
   rage?: number;
 }
@@ -110,9 +112,16 @@ export class BattleState {
     // 李信安（學分混子）：單次傷害超過 16 的部分減半
     const cap = t.damageSoftCap;
     if (cap && raw > cap.at) raw = cap.at + (raw - cap.at) * cap.factor;
-    const dmg = Math.max(0, Math.round(raw));
+    let dmg = Math.max(0, Math.round(raw));
     if (dmg <= 0) return null;
     const f = this.fighters[seat];
+    // 護盾先吸收
+    let shielded = 0;
+    if (f.shield && f.shield > 0) {
+      shielded = Math.min(f.shield, dmg);
+      f.shield -= shielded;
+      dmg -= shielded;
+    }
     f.hp = Math.max(0, f.hp - dmg);
     // 葉柄承：第一次歸零鎖血在 1
     let survived = false;
@@ -121,7 +130,15 @@ export class BattleState {
       f.survivedOnce = true;
       survived = true;
     }
-    return { seat, amount: dmg, hpAfter: f.hp, source, ...(statusId ? { statusId } : {}), ...(survived ? { survived } : {}) };
+    return {
+      seat,
+      amount: dmg,
+      hpAfter: f.hp,
+      source,
+      ...(statusId ? { statusId } : {}),
+      ...(survived ? { survived } : {}),
+      ...(shielded ? { shielded } : {}),
+    };
   }
 
   /**
@@ -180,6 +197,9 @@ export class BattleState {
   applyStatus(seat: Seat, statusId: string, turns: number, source?: Seat): number {
     if (!getStatus(statusId)) return 0;
     if (this.traits(seat).immuneStatuses?.includes(statusId)) return 0;
+    // 潘柏翰：二手菸變成回血
+    const repl = this.traits(seat).statusReplace?.[statusId];
+    if (repl) statusId = repl;
     // 鄭霖澤：有回合數的負面效果持續兩倍久
     const dur = this.traits(seat).statusDurationMultiplier?.[statusId];
     if (dur && turns < PERMANENT_TURNS) turns = Math.round(turns * dur);
@@ -217,6 +237,10 @@ export class BattleState {
       if (def.damagePerTurn && def.damagePerTurn > 0) {
         const d = this.dealDamage(seat, def.damagePerTurn * (s.stacks ?? 1), 'status', undefined, def.id);
         if (d) damage.push(d);
+      }
+      if (def.healPerTurn && def.healPerTurn > 0) {
+        const h = this.heal(seat, def.healPerTurn);
+        if (h && h.amount > 0) heals.push(h);
       }
       if (def.skipTurn) skip = true;
     }

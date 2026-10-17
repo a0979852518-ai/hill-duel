@@ -111,6 +111,8 @@ export class Hud {
           .map((s) => {
             const def = getStatus(s.statusId);
             const name = (def?.name ?? s.statusId).replace(/（.*）/, '');
+            if (def?.healPerTurn) return `${name} +${def.healPerTurn}/回合`;
+            if (def?.damagePerTurn && !def.stackable) return `${name} -${def.damagePerTurn}/回合`;
             if (def?.stackable && def.damagePerTurn) return `${name} -${Math.round(def.damagePerTurn * (s.stacks ?? 1))}/回合`;
             let mult = def?.incomingMultiplier ?? def?.outgoingMultiplier;
             // 鄭霖澤：負面效果加倍（絲襪每層 ×1.4）
@@ -123,6 +125,7 @@ export class Hud {
           // 竹竿：連中、胡牌、憤怒
           .concat(p.huReady ? ['胡！下次必抽麻將'] : p.streak ? [`連中 ${p.streak}/3`] : [])
           .concat(p.rage ? [`憤怒 傷害+${p.rage.toFixed(2)}`] : [])
+          .concat(p.shield ? [`護盾 ${p.shield}`] : [])
           .join('  '),
       );
       if (side.maxHp !== p.maxHp) {

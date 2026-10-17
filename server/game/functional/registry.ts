@@ -69,6 +69,18 @@ const handlers: Record<string, FunctionalHandler> = {
     },
   },
 
+  /** 給自己附加狀態＋護盾（潘柏翰的兵役）。params.statusId、params.turns、params.shield */
+  statusAndShield: {
+    execute({ state, seat, item }) {
+      const statusId = String(item.params.statusId);
+      const turns = Number(item.params.turns ?? 2);
+      const applied = state.applyStatus(seat, statusId, turns, seat);
+      const f = state.fighters[seat];
+      f.shield = (f.shield ?? 0) + Number(item.params.shield ?? 0);
+      return { damages: [], defenseUpdates: [], statusApplied: [{ seat, statusId, turns: applied || turns }] };
+    },
+  },
+
   /** 回血。params.amount */
   heal: {
     execute({ state, seat, item }) {

@@ -63,6 +63,14 @@ export interface CharacterTraits {
   streakReward?: { hits: number; itemId: string };
   /** 受到的單次傷害超過 at 的部分乘 factor（李信安：學分混子，超過 16 的部分減半） */
   damageSoftCap?: { at: number; factor: number };
+  /** 被打飛倒地時額外扣血（潘柏翰：年邁） */
+  knockdownDamage?: number;
+  /** 被附加某狀態時改成另一個狀態（潘柏翰：二手菸 → 回血） */
+  statusReplace?: Record<string, string>;
+  /** 抽卡時抽到 A 直接換成 B（潘柏翰：香菸 → Winston 一條） */
+  drawReplace?: Record<string, string>;
+  /** 自己放的防禦道具多擋幾次（潘柏翰：鋼盔 +1） */
+  defenseExtraHits?: Record<string, number>;
   /** 第一次血量歸零時鎖血，固定在 1（一場只有一次） */
   surviveOnce?: boolean;
 }
@@ -269,6 +277,36 @@ export const CHARACTERS: CharacterDef[] = [
     ],
     exclusiveItems: ['mahjong', 'genshinFigure'],
     placeholder: { color: 0xffffff, accent: 0xf1d3b8 },
+  },
+  {
+    id: 'panbohan',
+    name: '潘柏翰（大哥）',
+    maxHp: 110,
+    description: '退伍的老菸槍',
+    portrait: 'assets/characters/panbohan/portrait.png',
+    poses: {
+      idle: 'assets/characters/panbohan/idle.png',
+      throw: 'assets/characters/panbohan/throw.png',
+      hurt: 'assets/characters/panbohan/hurt.png',
+      dead: 'assets/characters/panbohan/dead.png',
+    },
+    knockFrames: [1, 2, 3, 4, 5].map((i) => `assets/characters/panbohan/knock${i}.png`),
+    traits: {
+      knockdownDamage: 8,
+      statusReplace: { smoke: 'smokeHeal' },
+      drawReplace: { cigarette: 'winston' },
+      defenseExtraHits: { helmet: 1 },
+    },
+    skills: [
+      '初始血量 110',
+      '年邁：已經 23 歲，膝蓋和腰不好，被打飛倒地時額外扣 8 血',
+      '軍人：自己放的得咖咪咪的鋼盔可以多擋 1 次（2 → 3）',
+      '抽菸：被大哥的香菸打中，二手菸改成每回合回 1 血（不疊加）',
+      '菸癮大：抽到大哥的香菸會直接升級成「Winston 一條」（傷害 20，對方每回合扣 3 血）',
+      '專屬卡牌「兵役」：下一個自己的回合傷害 ×2，並獲得 20 點護盾',
+    ],
+    exclusiveItems: ['military', 'winston'],
+    placeholder: { color: 0x6b6b5e, accent: 0xf1d3b8 },
   },
 
   // ---- 以下是最早的臨時角色（沒有照片），先關閉；改成 enabled: true 就會回到選角畫面 ----

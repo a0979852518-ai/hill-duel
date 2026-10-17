@@ -49,6 +49,8 @@ export interface PlayerView {
   x: number;
   /** 黏在身上的東西（poopoo恩），純裝飾 */
   stuck?: StuckItem[];
+  /** 護盾剩多少（潘柏翰的兵役） */
+  shield?: number;
   /** 竹竿：目前連續直接命中幾次、胡了沒、憤怒加成（傷害 +） */
   streak?: number;
   huReady?: boolean;
@@ -157,6 +159,10 @@ export interface DamageEntry {
   bounces?: number;
   /** 角色技能的爆擊（捲毛的快煮鍋） */
   crit?: boolean;
+  /** 護盾吸收了多少（潘柏翰的兵役） */
+  shielded?: number;
+  /** 顯示用的標籤（例如「年邁」） */
+  label?: string;
   /** 觸發鎖血（葉柄承：第一次歸零固定在 1 血） */
   survived?: boolean;
 }

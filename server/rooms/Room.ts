@@ -249,6 +249,7 @@ export class Room {
         ...(f?.hitStreak ? { streak: f.hitStreak } : {}),
         ...(f?.huReady ? { huReady: true } : {}),
         ...(f?.rage ? { rage: f.rage } : {}),
+        ...(f?.shield ? { shield: f.shield } : {}),
         ...(p.bot ? { bot: p.bot } : {}),
       };
     }) as RoomSnapshot['players'];

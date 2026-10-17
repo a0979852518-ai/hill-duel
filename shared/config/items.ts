@@ -333,6 +333,32 @@ export const ITEMS: ItemDef[] = [
     splashMultiplier: 0.5,
   },
   {
+    id: 'winston',
+    kind: 'throwable',
+    name: 'Winston 一條',
+    description: '潘柏翰專屬（抽到大哥的香菸時自動升級）。一條 10 包整條砸過去，命中傷害 20，之後對方每回合扣 3 血（不疊加）。',
+    icon: 'assets/items/winston.png',
+    sprite: 'assets/items/winston.png',
+    placeholder: { shape: 'rect', color: 0xb5283f },
+    exclusiveTo: ['panbohan'],
+    // 平常抽不到：潘柏翰抽到香菸時直接換成這個
+    weight: 0,
+    tags: ['heavy'],
+    damage: 20,
+    // 一條 10 包約 200 公克
+    weightKg: 0.2,
+    frictionAir: 0.0014,
+    minSpeed: 420,
+    maxSpeed: 2240,
+    gravityScale: 1,
+    radius: 15,
+    displaySize: 64,
+    spin: 0.3,
+    explosionRadius: 28,
+    splashMultiplier: 0.5,
+    onHitStatus: { statusId: 'heavySmoke', turns: 999 },
+  },
+  {
     id: 'acCard',
     kind: 'throwable',
     name: '侯宸宇的冷氣卡',
@@ -551,6 +577,21 @@ export const ITEMS: ItemDef[] = [
   },
 
 
+  {
+    id: 'military',
+    kind: 'functional',
+    role: 'attack',
+    name: '兵役',
+    description: '潘柏翰專屬。回想起軍中訓練：下一個自己的回合傷害 ×2，並且獲得 20 點護盾（先擋傷害，用完才扣血）。',
+    icon: 'assets/items/military.png',
+    placeholder: { shape: 'rect', color: 0x556b2f },
+    exclusiveTo: ['panbohan'],
+    weightKg: 0.01,
+    handler: 'statusAndShield',
+    targeting: 'none',
+    params: { statusId: 'drill', turns: 2, shield: 20 },
+  },
+
   // ================= 以下是最早的臨時道具（已停用，改 enabled: true 可加回抽取池） =================
 
   // ---------------- 投擲型 ----------------
@@ -703,6 +744,8 @@ export interface StatusDef {
   skipTurn?: boolean;
   /** 抽道具時藏起幾個選項 */
   hideDrawOptions?: number;
+  /** 回合開始時回多少血（潘柏翰抽菸：二手菸變成回血） */
+  healPerTurn?: number;
   /** 可累加：再次命中時層數 +1，持續傷害 = damagePerTurn × 層數 */
   stackable?: boolean;
   decrementAt: 'start' | 'end';
@@ -717,6 +760,9 @@ export const STATUSES: StatusDef[] = [
   { id: 'blind', name: '冷氣卡封印', hideDrawOptions: 1, color: 0x4fc3f7, decrementAt: 'end' },
   { id: 'disgust', name: '噁心（傷害減半）', outgoingMultiplier: 0.5, color: 0xc0ca33, decrementAt: 'end' },
   { id: 'mental', name: '精神傷害（受傷×1.2/層）', incomingMultiplier: 1.2, stackable: true, color: 0xab47bc, decrementAt: 'start' },
+  { id: 'heavySmoke', name: '一條菸的二手菸', damagePerTurn: 3, color: 0x8d6e63, decrementAt: 'start' },
+  { id: 'smokeHeal', name: '老菸槍（二手菸回血）', healPerTurn: 1, color: 0xa1887f, decrementAt: 'start' },
+  { id: 'drill', name: '兵役（傷害×2）', outgoingMultiplier: 2, color: 0x558b2f, decrementAt: 'end' },
   { id: 'beast', name: '獸控（傷害×2）', outgoingMultiplier: 2, color: 0x43a047, decrementAt: 'end' },
   { id: 'buff', name: '蛋白質加持（傷害×1.2/層）', outgoingMultiplier: 1.2, stackable: true, color: 0xff7043, decrementAt: 'end' },
 ];

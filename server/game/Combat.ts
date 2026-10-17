@@ -111,6 +111,12 @@ export function resolveThrow(state: BattleState, seat: Seat, item: ThrowableDef,
 
     // 擊退（傷害算完才知道會不會被打死 → 打死就躺著不起來）
     if (knockSeat !== null && knockSpeed >= KNOCKBACK.minSpeed) {
+      // 潘柏翰（年邁）：被打飛倒地額外扣血
+      const old = state.traits(knockSeat).knockdownDamage;
+      if (old && state.fighters[knockSeat].hp > 0) {
+        const e = state.dealDamage(knockSeat, old, 'status');
+        if (e) damages.push({ ...e, label: '年邁' });
+      }
       knock = knockRequest(knockSeat, knockSpeed, impact.y, impactVel, state.fighters[knockSeat].hp <= 0, item.weightKg ?? 0.5, state.physics.getCharScale(knockSeat));
     }
 

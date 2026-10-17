@@ -411,7 +411,7 @@ export class BattleScene extends Phaser.Scene {
             if (d.survived) floatingText(this, this.xOf(d.seat), ARENA.groundY - 260, '鎖血！剩 1 血', '#ffeb3b');
           }
           for (const h of e.heals ?? []) {
-            damageNumber(this, this.xOf(h.seat), h.amount, '#69f0ae', '便便回血', '+');
+            damageNumber(this, this.xOf(h.seat), h.amount, '#69f0ae', h.seat !== undefined && store.snapshot?.players[h.seat]?.characterId === 'panbohan' ? '抽菸回血' : '便便回血', '+');
             this.hud.setHp(h.seat, h.hpAfter);
           }
           for (const uid of e.expiredDefenses) {
@@ -520,7 +520,7 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean; survived?: boolean }[]): void {
+  private applyDamages(damages: { seat: Seat; amount: number; hpAfter: number; source: string; headshot?: boolean; bounces?: number; crit?: boolean; survived?: boolean; shielded?: number; label?: string }[]): void {
     for (const d of damages) {
       if (d.source === 'crush') {
         sfx.play('crush');
@@ -548,6 +548,12 @@ export class BattleScene extends Phaser.Scene {
         '-',
         d.source === 'direct',
       );
+      if (d.shielded) floatingText(this, this.xOf(d.seat), ARENA.groundY - 230, `護盾擋下 ${d.shielded}`, '#90caf9');
+      if (d.label && d.source === 'status') {
+        damageNumber(this, this.xOf(d.seat), d.amount, '#ffab91', d.label, '-');
+        this.hud.setHp(d.seat, d.hpAfter);
+        continue;
+      }
       if (d.survived) {
         floatingText(this, this.xOf(d.seat), ARENA.groundY - 260, '鎖血！剩 1 血', '#ffeb3b');
         this.cameras.main.flash(180, 255, 235, 59);

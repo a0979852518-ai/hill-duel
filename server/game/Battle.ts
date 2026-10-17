@@ -104,6 +104,9 @@ export class Battle {
       f.huReady = false;
       drawn = [reward.itemId, ...drawItems(GAME_CONFIG.drawCount - 1, (i) => i.id !== reward.itemId && this.eligible(i), this.rng, weightMul)];
     } else drawn = drawItems(GAME_CONFIG.drawCount, (i) => this.eligible(i), this.rng, weightMul);
+    // 潘柏翰：抽到香菸直接升級成 Winston 一條
+    const repl = this.state.traits(seat).drawReplace;
+    if (repl) drawn = drawn.map((id) => repl[id] ?? id);
     // 冷氣卡效果：藏起部分選項（至少留一個能選）
     const hide = Math.min(this.state.hiddenDrawCount(seat), Math.max(0, drawn.length - 1));
     this.options = drawn.slice(0, drawn.length - hide);

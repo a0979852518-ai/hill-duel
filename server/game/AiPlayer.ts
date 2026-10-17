@@ -155,6 +155,9 @@ export class AiPlayer {
     }
     // 功能道具
     switch (item.handler) {
+      case 'statusAndShield':
+        // 兵役：下回合 ×2 ＋ 20 護盾
+        return 12 * hitRate + 8;
       case 'heal': {
         const missing = me.maxHp - me.hp;
         return Math.min(Number(item.params.amount ?? 15), missing) * 0.9;

@@ -45,7 +45,7 @@ export function createDefense(state: BattleState, seat: Seat, def: DefenseDef, x
     durability: def.durability,
     maxDurability: def.durability,
     hits: 0,
-    maxHits: def.maxHits,
+    maxHits: def.maxHits === null ? null : def.maxHits + (state.traits(seat).defenseExtraHits?.[def.id] ?? 0),
     remainingTurns: def.durationTurns,
     blocks: def.blocks,
     damageReduction: def.damageReduction,
